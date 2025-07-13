@@ -1,9 +1,3 @@
-<h1><span style="color: crimson;">Streamly</span> - Streamlit Assistant <img src="imgs/slogo.png" alt="Streamlit logo" width="50" style="border-radius: 25px;"/></h1>
-
-<p align="center">
-  <img src="imgs/streamly_readme.png" alt="Streamly image" width="300" style="border-radius: 45px;"/>
-</p>
-
 Enforcement Bot is an AI Assistant that was designed to track addresses. It acts as an AI-infused sidekick, offering on-the-fly assistance 🚀, google snippets ✂️, and a deep dive into Occupant Identification and Compliance Check. 🧪
 
 ## Dynamic Features:
