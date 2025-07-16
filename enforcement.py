@@ -8,6 +8,7 @@ import requests
 import base64
 import pandas as pd
 from openai import OpenAI, OpenAIError
+import tabulate
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -118,7 +119,14 @@ def on_chat_submit(chat_input):
     """
     Handle chat input submissions and interact with the OpenAI API.
     """
-    user_input = chat_input.text.strip().lower() if hasattr(chat_input, "text") and chat_input.text else ""
+    user_input = chat_input.text.strip() if hasattr(chat_input, "text") and chat_input.text else ""
+    user_input_lower = user_input.lower()
+
+    # Track uploaded CSV in session state
+    if "pending_csv" not in st.session_state:
+        st.session_state.pending_csv = None
+    if "pending_command" not in st.session_state:
+        st.session_state.pending_command = None
 
     if 'conversation_history' not in st.session_state:
         st.session_state.conversation_history = initialize_conversation()
@@ -126,33 +134,67 @@ def on_chat_submit(chat_input):
     st.session_state.conversation_history.append({"role": "user", "content": user_input})
 
     try:
-        model_engine = "gpt-4o-mini"
         assistant_reply = ""
-        #st.write("chat_input:", chat_input)
-        #st.write("chat_input.files:", getattr(chat_input, "files", None))
-
-        # Handle CSV file input if present
         uploaded_file = chat_input.files[0] if hasattr(chat_input, "files") and chat_input.files else None
-        if uploaded_file is not None:
+
+        # If only CSV is uploaded and no text command
+        if uploaded_file is not None and not user_input:
+            st.session_state.pending_csv = uploaded_file
+            assistant_reply = (
+                "You have uploaded a CSV file but did not specify whether it is for 'shophouse' or 'industrial'. "
+                "Please type either 'shophouse' or 'industrial' in the chat input to proceed."
+            )
+        # If command is present ("shophouse" or "industrial") and CSV was previously uploaded
+        elif ("shophouse" in user_input_lower or "industrial" in user_input_lower):
+            # If CSV uploaded now
+            if uploaded_file is not None:
+                try:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file)
+                    assistant_reply += f"\n\nDetected '{'shophouse' if 'shophouse' in user_input_lower else 'industrial'}' command with CSV uploaded."
+                    assistant_reply += "\n\nCSV File Contents:\n"
+                    assistant_reply += df.to_markdown(index=False)
+                except Exception as e:
+                    assistant_reply += f"\n\nError reading CSV file: {str(e)}"
+            # If CSV was uploaded previously and command now provided
+            elif st.session_state.pending_csv is not None:
+                try:
+                    st.session_state.pending_csv.seek(0)
+                    df = pd.read_csv(st.session_state.pending_csv)
+                    assistant_reply += f"\n\nDetected '{'shophouse' if 'shophouse' in user_input_lower else 'industrial'}' command with previously uploaded CSV."
+                    assistant_reply += "\n\nCSV File Contents:\n"
+                    assistant_reply += df.to_markdown(index=False)
+                    st.session_state.pending_csv = None  # Clear after use
+                except Exception as e:
+                    assistant_reply += f"\n\nError reading CSV file: {str(e)}"
+            else:
+                tokens = user_input.split()
+                if len(tokens) > 1:
+                    address = " ".join(tokens[1:])
+                    assistant_reply += f"\n\nDetected '{'shophouse' if 'shophouse' in user_input_lower else 'industrial'}' command with address: {address}"
+                    assistant_reply += f"\n\nAddress Provided: {address}"
+                else:
+                    st.session_state.pending_command = user_input_lower
+                    assistant_reply += "\n\nPlease provide an address after the command."
+        # If user previously typed command and now provides address
+        elif st.session_state.pending_command is not None and user_input:
+            tokens = user_input.split()
+            address = " ".join(tokens)
+            assistant_reply += f"\n\nDetected '{st.session_state.pending_command}' command with address: {address}"
+            assistant_reply += f"\n\nAddress Provided: {address}"
+            st.session_state.pending_command = None  # Clear after use
+        # Normal chat flow
+        elif uploaded_file is not None:
             try:
-                uploaded_file.seek(0)  # Ensure pointer is at start
+                uploaded_file.seek(0)
                 df = pd.read_csv(uploaded_file)
-                preview = df.head().to_markdown(index=False)
-                assistant_reply += f"\n\nCSV Preview:\n{preview}"
+                assistant_reply += "\n\nCSV File Contents:\n"
+                assistant_reply += df.to_markdown(index=False)
             except Exception as e:
                 assistant_reply += f"\n\nError reading CSV file: {str(e)}"
-
-        if "latest updates" in user_input:
-            assistant_reply = "Here are the latest highlights.\n" + assistant_reply
-        elif user_input:
-            response = client.chat.completions.create(
-                model=model_engine,
-                messages=st.session_state.conversation_history
-            )
-            assistant_reply = response.choices[0].message.content + assistant_reply
         else:
             if not assistant_reply:
-                assistant_reply = "Please enter a question or upload a file."
+                assistant_reply = "Please enter a command or upload a file."
 
         st.session_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
         st.session_state.history.append({"role": "user", "content": user_input})
@@ -161,7 +203,6 @@ def on_chat_submit(chat_input):
     except OpenAIError as e:
         logging.error(f"Error occurred: {e}")
         st.error(f"OpenAI Error: {str(e)}")
-
 
 def initialize_session_state():
     """Initialize session state variables."""
@@ -193,7 +234,7 @@ def main():
     st.sidebar.markdown("---")
 
     # Sidebar for Mode Selection
-    mode = st.sidebar.radio("Select Mode:", options=["Google Map", "Enforcement"], index=1)
+    mode = st.sidebar.radio("Select Mode:", options=["Google Search Results", "Enforcement"], index=1)
 
     st.sidebar.markdown("---")
 
@@ -202,9 +243,8 @@ def main():
     if show_basic_info:
         st.sidebar.markdown("""
         ### Basic Interactions
-        - **Ask About Streamlit**: Type your questions about Streamlit's latest updates, features, or issues.
-        - **Search for Code**: Use keywords like 'code example', 'syntax', or 'how-to' to get relevant code snippets.
-        - **Navigate Updates**: Switch to 'Updates' mode to browse the latest Streamlit updates in detail.
+        - **Ask About Addresses**: Upload a csv file containing Address and Approved Use. Type "shophouse" or "industrial" to scan for address. Alternatively, you may type in an address to search for an occupant.
+        - **Google Snippet**: Look through Google Search results that were generated from the search.
         """)
 
     # Display advanced interactions
@@ -212,10 +252,9 @@ def main():
     if show_advanced_info:
         st.sidebar.markdown("""
         ### Advanced Interactions
-        - **Generate an App**: Use keywords like **generate app**, **create app** to get a basic Streamlit app code.
-        - **Code Explanation**: Ask for **code explanation**, **walk me through the code** to understand the underlying logic of Streamlit code snippets.
-        - **Project Analysis**: Use **analyze my project**, **technical feedback** to get insights and recommendations on your current Streamlit project.
-        - **Debug Assistance**: Use **debug this**, **fix this error** to get help with troubleshooting issues in your Streamlit app.
+        - **CSV template**: Download this CSV template to populate your list of addresses and the corresponding approved use.
+        - **Address Format**:  For entering address, please follow the standard address format: <block> <street> <unit> <postal code>
+        - **Download CSV**: You can download CSV if there is a generated response of the address.
         """)
 
     st.sidebar.markdown("---")
