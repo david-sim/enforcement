@@ -9,6 +9,7 @@ import base64
 import pandas as pd
 from openai import OpenAI, OpenAIError
 import tabulate
+from serpapi import GoogleSearch
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,13 +30,13 @@ client = openai.OpenAI()
 
 # Streamlit Page Configuration
 st.set_page_config(
-    page_title="Streamly - An Intelligent Streamlit Assistant",
+    page_title="Enforcement - An Intelligent Enforcement Assistant",
     page_icon="imgs/avatar.png",
     layout="wide",
     initial_sidebar_state="auto",
     menu_items={
-        "Get help": "https://github.com/",
-        "Report a bug": "https://github.com/",
+        "Get help": "https://github.com/david-sim",
+        "Report a bug": "https://github.com/david-sim",
         "About": """
             ## Enforcement Assistant
             ### Powered using GPT-4o-mini
@@ -113,6 +114,37 @@ def initialize_conversation():
         {"role": "assistant", "content": assistant_message}
     ]
     return conversation_history
+
+# Google Search results
+def google_search_entity(address):
+    print(f"Executing Google Search for: {address}")
+    time.sleep(3)
+    search = GoogleSearch({
+        "q": f"{address}",
+        "location": "Singapore",
+        "hl": "en",
+        "gl": "sg",
+        "filter": "0",
+        "api_key": SERPAPI_API_KEY
+    })
+    results = search.get_dict()
+
+    if "error" in results:
+        print(f"Error in SERP response: {results['error']}")
+        return None
+
+    organic_results = results.get("organic_results", [])
+
+    return format_structured_results(parse_results(organic_results))
+
+def parse_results(raw_results):
+    return raw_results if isinstance(raw_results, list) else []
+
+def format_structured_results(parsed_results):
+    return "\n".join([
+        f"Title: {item.get('title', '')}\nLink: {item.get('link', '')}\nSnippet: {item.get('snippet', '')}\nDate: {item.get('date', 'No date available')}\n"
+        for item in parsed_results
+    ])
 
 @st.cache_data(show_spinner=False)
 def on_chat_submit(chat_input):
