@@ -11,6 +11,7 @@ from openai import OpenAI, OpenAIError
 import tabulate
 from serpapi import GoogleSearch
 
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
