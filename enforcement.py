@@ -8,9 +8,11 @@ import requests
 import base64
 import pandas as pd
 from openai import OpenAI, OpenAIError
+from langchain_openai import ChatOpenAI
+from langchain.prompts import PromptTemplate, ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 import tabulate
 from google_search import google_search_entity, parse_results, format_structured_results
-
+from csv_handler import process_csv  
 
 
 # Configure logging
@@ -29,6 +31,8 @@ if not OPENAI_API_KEY:
 # Assign OpenAI API Key
 openai.api_key = OPENAI_API_KEY
 client = openai.OpenAI()
+
+llm = ChatOpenAI(model=st.secrets.get("LLM_MODEL",None), temperature=st.secrets.get("LLM_TEMPERATURE",None))
 
 # Streamlit Page Configuration
 st.set_page_config(
@@ -151,24 +155,35 @@ def on_chat_submit(chat_input):
             )
         # If command is present ("shophouse" or "industrial") and CSV was previously uploaded
         elif ("shophouse" in user_input_lower or "industrial" in user_input_lower):
+            command = "shophouse" if "shophouse" in user_input_lower else "industrial"
             # If CSV uploaded now
             if uploaded_file is not None:
                 try:
-                    uploaded_file.seek(0)
-                    df = pd.read_csv(uploaded_file)
-                    assistant_reply += f"\n\nDetected '{'shophouse' if 'shophouse' in user_input_lower else 'industrial'}' command with CSV uploaded."
-                    assistant_reply += "\n\nCSV File Contents:\n"
-                    assistant_reply += df.to_markdown(index=False)
+                    # Process CSV using csv_handler
+                    data = process_csv(command, uploaded_file)
+                    assistant_reply += f"\n\nDetected '{command}' command with CSV uploaded."
+                    assistant_reply += "\n\nProcessed CSV Data:\n"
+                    assistant_reply += f"{data}"
+                    #uploaded_file.seek(0)
+                    #df = pd.read_csv(uploaded_file)
+                    #assistant_reply += f"\n\nDetected '{'shophouse' if 'shophouse' in user_input_lower else 'industrial'}' command with CSV uploaded."
+                    #assistant_reply += "\n\nCSV File Contents:\n"
+                    #assistant_reply += df.to_markdown(index=False)
                 except Exception as e:
                     assistant_reply += f"\n\nError reading CSV file: {str(e)}"
             # If CSV was uploaded previously and command now provided
             elif st.session_state.pending_csv is not None:
                 try:
-                    st.session_state.pending_csv.seek(0)
-                    df = pd.read_csv(st.session_state.pending_csv)
-                    assistant_reply += f"\n\nDetected '{'shophouse' if 'shophouse' in user_input_lower else 'industrial'}' command with previously uploaded CSV."
-                    assistant_reply += "\n\nCSV File Contents:\n"
-                    assistant_reply += df.to_markdown(index=False)
+                    # Process CSV using csv_handler
+                    data = process_csv(command, uploaded_file)
+                    assistant_reply += f"\n\nDetected '{command}' command with CSV uploaded."
+                    assistant_reply += "\n\nProcessed CSV Data:\n"
+                    assistant_reply += f"{data}"
+                    #st.session_state.pending_csv.seek(0)
+                    #df = pd.read_csv(st.session_state.pending_csv)
+                    #assistant_reply += f"\n\nDetected '{'shophouse' if 'shophouse' in user_input_lower else 'industrial'}' command with previously uploaded CSV."
+                    #assistant_reply += "\n\nCSV File Contents:\n"
+                    #assistant_reply += df.to_markdown(index=False)
                     st.session_state.pending_csv = None  # Clear after use
                 except Exception as e:
                     assistant_reply += f"\n\nError reading CSV file: {str(e)}"
