@@ -164,3 +164,8 @@ cython_debug/
 
 #secret files
 .streamlit/secrets.toml
+
+#unused files
+unused_files/
+
+CLEANUP_SUMMARY.md

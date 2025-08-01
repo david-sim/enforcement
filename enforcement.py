@@ -2,19 +2,16 @@ import openai
 import streamlit as st
 import logging
 import warnings
-from PIL import Image, ImageEnhance
-import json
+from PIL import Image
 import time
 import re
-import requests
 import base64
 import pandas as pd
 from openai import OpenAI, OpenAIError
+import datetime
 from langchain_openai import ChatOpenAI
-#from langchain.prompts import PromptTemplate, ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
-import tabulate
-from google_search import google_search_entity, parse_results, format_structured_results
-from csv_handler import process_csv, process_industrial_addresses
+from google_search import google_search_entity
+from enhanced_csv_processor import process_industrial_addresses_enhanced, process_csv
 
 # Suppress langchain deprecation warnings
 warnings.filterwarnings("ignore", message="Importing verbose from langchain root module is no longer supported.*")
@@ -25,7 +22,6 @@ logging.basicConfig(level=logging.INFO)
 
 # Constants
 NUMBER_OF_MESSAGES_TO_DISPLAY = 20
-API_DOCS_URL = "https://docs.streamlit.io/library/api-reference"
 
 # Retrieve and validate API key
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
@@ -70,38 +66,6 @@ def img_to_base64(image_path):
         logging.error(f"Error converting image to base64: {str(e)}")
         return None
 
-@st.cache_data(show_spinner=False)
-def long_running_task(duration):
-    """
-    Simulates a long-running operation.
-
-    Parameters:
-    - duration: int, duration of the task in seconds
-
-    Returns:
-    - str: Completion message
-    """
-    time.sleep(duration)
-    return "Long-running operation completed."
-
-@st.cache_data(show_spinner=True)
-def load_and_enhance_image(image_path, enhance=False):
-    """
-    Load and optionally enhance an image.
-
-    Parameters:
-    - image_path: str, path of the image
-    - enhance: bool, whether to enhance the image or not
-
-    Returns:
-    - img: PIL.Image.Image, (enhanced) image
-    """
-    img = Image.open(image_path)
-    if enhance:
-        enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(1.8)
-    return img
-
 def display_streamlit_updates():
     """Display the latest updates of the Streamlit."""
     with st.expander("Streamlit 1.36 Announcement", expanded=False):
@@ -132,8 +96,31 @@ def is_valid_address(address):
     return re.match(pattern, address.strip()) is not None
 
 def chat_callback(message):
-    #st.chat_message("assistant").write(message)
+    """Legacy callback function that immediately updates chat history."""
     st.session_state.history.append({"role": "assistant", "content": message})
+    # Force a rerun to show the message immediately
+    st.rerun()
+
+def process_industrial_with_progress(addresses, llm):
+    """
+    Process industrial addresses with enhanced data collection and CSV generation.
+    
+    Args:
+        addresses: List of addresses to process
+        llm: Language model instance
+    
+    Returns:
+        Tuple of (results, progress_messages, csv_buffer) - enhanced results with CSV download capability
+    """
+    try:
+        # Use the enhanced processing approach with comprehensive data collection
+        results, progress_messages, csv_buffer = process_industrial_addresses_enhanced(addresses, llm)
+        
+        return results, progress_messages, csv_buffer
+    except Exception as e:
+        logging.error(f"Error in enhanced processing: {str(e)}")
+        # Return error result
+        return [], [f"❌ Processing failed: {str(e)}"], None
 
 def on_chat_submit(chat_input):
     """
@@ -155,6 +142,7 @@ def on_chat_submit(chat_input):
 
     try:
         assistant_reply = ""
+        progress_messages_to_add = []  # Collect progress messages to add after main reply
         uploaded_file = chat_input.files[0] if hasattr(chat_input, "files") and chat_input.files else None
 
         # If only CSV is uploaded and no text command
@@ -173,12 +161,24 @@ def on_chat_submit(chat_input):
                     assistant_reply += f"\n\nDetected '{command}' command with CSV uploaded."
                     if command == "industrial":
                         addresses = data["addresses"]
-                        # Call the new industrial processing function
-                        results = process_industrial_addresses(addresses, llm, chat_callback=chat_callback)
-                        # Format results for display
-                        assistant_reply += "\n\nIndustrial Address Results:\n"
-                        for row in results:
-                            assistant_reply += f"\nAddress: {row[0]}\n\nOccupant: {row[1]}\n\nAnalysis: {row[2]}\n\nSearch Results: \n\n{row[3]}\n---"
+                        # Call the enhanced processing function with CSV generation
+                        results, progress_messages, csv_buffer = process_industrial_with_progress(addresses, llm)
+                        
+                        # Collect progress messages to add after main reply
+                        progress_messages_to_add.extend(progress_messages)
+                        
+                        # Store CSV buffer for download instead of displaying results
+                        if csv_buffer is not None:
+                            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"industrial_address_results_{timestamp}.csv"
+                            st.session_state.csv_download_data = {
+                                'buffer': csv_buffer,
+                                'filename': filename,
+                                'addresses_processed': len(addresses)
+                            }
+                            assistant_reply += f"\n\n✅ Successfully processed {len(addresses)} address(es). Results are ready for download as CSV file."
+                        else:
+                            assistant_reply += f"\n\n❌ Processing completed but CSV generation failed. Please check the logs."
                     else:
                         assistant_reply += "\n\nProcessed CSV Data:\n"
                         assistant_reply += f"{data}"
@@ -187,16 +187,32 @@ def on_chat_submit(chat_input):
             # If CSV was uploaded previously and command now provided
             elif st.session_state.pending_csv is not None:
                 try:
-                    # Process CSV using csv_handler
-                    data = process_csv(command, uploaded_file)
-                    assistant_reply += f"\n\nDetected '{command}' command with CSV uploaded."
-                    assistant_reply += "\n\nProcessed CSV Data:\n"
-                    assistant_reply += f"{data}"
-                    #st.session_state.pending_csv.seek(0)
-                    #df = pd.read_csv(st.session_state.pending_csv)
-                    #assistant_reply += f"\n\nDetected '{'shophouse' if 'shophouse' in user_input_lower else 'industrial'}' command with previously uploaded CSV."
-                    #assistant_reply += "\n\nCSV File Contents:\n"
-                    #assistant_reply += df.to_markdown(index=False)
+                    # Process CSV using csv_handler with the pending CSV file
+                    data = process_csv(command, st.session_state.pending_csv)
+                    assistant_reply += f"\n\nDetected '{command}' command with previously uploaded CSV."
+                    if command == "industrial":
+                        addresses = data["addresses"]
+                        # Call the enhanced processing function with CSV generation
+                        results, progress_messages, csv_buffer = process_industrial_with_progress(addresses, llm)
+                        
+                        # Collect progress messages to add after main reply
+                        progress_messages_to_add.extend(progress_messages)
+                        
+                        # Store CSV buffer for download instead of displaying results
+                        if csv_buffer is not None:
+                            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"industrial_address_results_{timestamp}.csv"
+                            st.session_state.csv_download_data = {
+                                'buffer': csv_buffer,
+                                'filename': filename,
+                                'addresses_processed': len(addresses)
+                            }
+                            assistant_reply += f"\n\n✅ Successfully processed {len(addresses)} address(es). Results are ready for download as CSV file."
+                        else:
+                            assistant_reply += f"\n\n❌ Processing completed but CSV generation failed. Please check the logs."
+                    else:
+                        assistant_reply += "\n\nProcessed CSV Data:\n"
+                        assistant_reply += f"{data}"
                     st.session_state.pending_csv = None  # Clear after use
                 except Exception as e:
                     assistant_reply += f"\n\nError reading CSV file: {str(e)}"
@@ -212,8 +228,6 @@ def on_chat_submit(chat_input):
                     if is_valid_address(address):
                         if command == "industrial":
                             try:
-                                assistant_reply += "\n\n🔄 Processing industrial address..."
-                                
                                 # Add validation for required secrets
                                 required_secrets = ['OPENAI_API_KEY', 'SERPAPI_API_KEY', 'LLM_MODEL']
                                 missing_secrets = []
@@ -224,13 +238,24 @@ def on_chat_submit(chat_input):
                                 if missing_secrets:
                                     assistant_reply += f"\n\n❌ Missing required configuration: {', '.join(missing_secrets)}"
                                 else:
-                                    assistant_reply += "\n\n✅ Configuration validated. Calling processing function..."
+                                    # Call the enhanced processing logic
+                                    results, progress_messages, csv_buffer = process_industrial_with_progress([address], llm)
                                     
-                                    # Call the processing logic
-                                    results = process_industrial_addresses([address], llm, chat_callback=chat_callback)
-                                    assistant_reply += f"\n\n✅ Processing completed. Found {len(results)} result(s)."
-                                    for row in results:
-                                        assistant_reply += f"\n\nAddress: {row[0]}\n\nOccupant: {row[1]}\n\nAnalysis: {row[2]}\n\nSearch Results: \n\n{row[3]}\n---"
+                                    # Collect progress messages to add after main reply
+                                    progress_messages_to_add.extend(progress_messages)
+                                    
+                                    # Store CSV buffer for download instead of displaying results
+                                    if csv_buffer is not None:
+                                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                                        filename = f"industrial_address_result_{timestamp}.csv"
+                                        st.session_state.csv_download_data = {
+                                            'buffer': csv_buffer,
+                                            'filename': filename,
+                                            'addresses_processed': 1
+                                        }
+                                        assistant_reply += f"\n\n✅ Successfully processed address: {address}. Results are ready for download as CSV file."
+                                    else:
+                                        assistant_reply += f"\n\n❌ Processing completed but CSV generation failed. Please check the logs."
                             except Exception as e:
                                 assistant_reply += f"\n\n❌ Error processing industrial address: {str(e)}"
                                 logging.error(f"Error in process_industrial_addresses: {str(e)}")
@@ -253,8 +278,6 @@ def on_chat_submit(chat_input):
                 # Process the address as needed (e.g., searchprocess_industrial_addresses or further logic)
                 if command == "industrial":
                     try:
-                        assistant_reply += "\n\n🔄 Processing industrial address..."
-                        
                         # Add validation for required secrets
                         required_secrets = ['OPENAI_API_KEY', 'SERPAPI_API_KEY', 'LLM_MODEL']
                         missing_secrets = []
@@ -265,13 +288,24 @@ def on_chat_submit(chat_input):
                         if missing_secrets:
                             assistant_reply += f"\n\n❌ Missing required configuration: {', '.join(missing_secrets)}"
                         else:
-                            assistant_reply += "\n\n✅ Configuration validated. Calling processing function..."
+                            # Use the enhanced processing function
+                            results, progress_messages, csv_buffer = process_industrial_with_progress([address], llm)
                             
-                            # You can call your processing logic here, e.g.:
-                            results = process_industrial_addresses([address], llm, chat_callback=chat_callback)
-                            assistant_reply += f"\n\n✅ Processing completed. Found {len(results)} result(s)."
-                            for row in results:
-                                assistant_reply += f"\n\nAddress: {row[0]}\n\nOccupant: {row[1]}\n\nAnalysis: {row[2]}\n\nSearch Results: \n\n{row[3]}\n---"
+                            # Collect progress messages to add after main reply
+                            progress_messages_to_add.extend(progress_messages)
+                            
+                            # Store CSV buffer for download instead of displaying results
+                            if csv_buffer is not None:
+                                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                                filename = f"industrial_address_result_{timestamp}.csv"
+                                st.session_state.csv_download_data = {
+                                    'buffer': csv_buffer,
+                                    'filename': filename,
+                                    'addresses_processed': 1
+                                }
+                                assistant_reply += f"\n\n✅ Successfully processed address: {address}. Results are ready for download as CSV file."
+                            else:
+                                assistant_reply += f"\n\n❌ Processing completed but CSV generation failed. Please check the logs."
                     except Exception as e:
                         assistant_reply += f"\n\n❌ Error processing industrial address: {str(e)}"
                         logging.error(f"Error in process_industrial_addresses: {str(e)}")
@@ -297,6 +331,10 @@ def on_chat_submit(chat_input):
         #st.session_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
         st.session_state.history.append({"role": "user", "content": user_input})
         st.session_state.history.append({"role": "assistant", "content": assistant_reply})
+        
+        # Add collected progress messages after the main reply
+        for message in progress_messages_to_add:
+            st.session_state.history.append({"role": "assistant", "content": message})
 
     except OpenAIError as e:
         logging.error(f"Error occurred: {e}")
@@ -308,6 +346,10 @@ def initialize_session_state():
         st.session_state.history = []
     if 'conversation_history' not in st.session_state:
         st.session_state.conversation_history = []
+    if 'cleanup_progress' not in st.session_state:
+        st.session_state.cleanup_progress = False
+    if 'csv_download_data' not in st.session_state:
+        st.session_state.csv_download_data = None
 
 def main():
     """
@@ -374,6 +416,32 @@ def main():
         if chat_input is not None:
             user_message = chat_input.text  # The user's text input
             on_chat_submit(chat_input)
+
+        # CSV Download Section
+        if hasattr(st.session_state, 'csv_download_data') and st.session_state.csv_download_data is not None:
+            csv_data = st.session_state.csv_download_data
+            st.markdown("---")
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.markdown("### 📊 Processing Results Ready")
+                st.markdown(f"**Addresses Processed:** {csv_data['addresses_processed']}")
+                st.markdown(f"**Filename:** {csv_data['filename']}")
+                
+                # Reset buffer position for download
+                csv_data['buffer'].seek(0)
+                
+                if st.download_button(
+                    label="📥 Download CSV Results",
+                    data=csv_data['buffer'].getvalue(),
+                    file_name=csv_data['filename'],
+                    mime="text/csv",
+                    key="download_csv_results"
+                ):
+                    st.success("✅ CSV file downloaded successfully!")
+                    # Clear the download data after successful download
+                    st.session_state.csv_download_data = None
+                    st.rerun()
+            st.markdown("---")
 
         # Display chat history
         for message in st.session_state.history[-NUMBER_OF_MESSAGES_TO_DISPLAY:]:
