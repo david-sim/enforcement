@@ -11,7 +11,7 @@ from openai import OpenAI, OpenAIError
 import datetime
 from langchain_openai import ChatOpenAI
 from google_search import google_search_entity
-from enhanced_csv_processor import process_industrial_addresses_enhanced, process_csv
+from enforcement_processor import process_industrial_addresses_enhanced, process_csv
 
 # Suppress langchain deprecation warnings
 warnings.filterwarnings("ignore", message="Importing verbose from langchain root module is no longer supported.*")
