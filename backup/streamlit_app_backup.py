@@ -66,10 +66,405 @@ def img_to_base64(image_path):
         logging.error(f"Error converting image to base64: {str(e)}")
         return None
 
-def display_streamlit_updates():
-    """Display the latest updates of the Streamlit."""
-    with st.expander("Streamlit 1.36 Announcement", expanded=False):
-        st.markdown("For more details on this version, check out the [Streamlit Forum post](https://docs.streamlit.io/library/changelog#version).")
+def process_csv_with_ui(uploaded_file, address_type, llm):
+    """
+    Process CSV file with real-time UI progress display and return downloadable results.
+    
+    Args:
+        uploaded_file: Streamlit uploaded file object
+        address_type: String indicating "shophouse" or "industrial"  
+        llm: Language model instance
+        
+    Returns:
+        Tuple of (results, csv_buffer) or None if processing fails
+    """
+    try:
+        # Import processing functions
+        from enforcement_processor import process_csv
+        
+        # Process the CSV to extract addresses
+        csv_data = process_csv(address_type, uploaded_file)
+        addresses = csv_data.get("addresses", [])
+        
+        if not addresses:
+            st.error("No addresses found in the uploaded file.")
+            return None
+            
+        # Display initial info
+        st.info(f"Found {len(addresses)} addresses to process")
+        
+        # Create progress containers
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        progress_log = st.empty()
+        
+        # Process addresses based on type
+        if address_type.lower() == "industrial":
+            # Use modified industrial processing with real-time callbacks
+            results, csv_buffer = process_industrial_addresses_with_realtime_ui(
+                addresses, llm, progress_bar, status_text, progress_log
+            )
+            
+            # Final success message
+            progress_bar.progress(1.0)
+            status_text.success(f"✅ Processing completed! Processed {len(results)} addresses.")
+            
+            return results, csv_buffer
+        else:
+            st.warning(f"Processing for {address_type} is not yet implemented.")
+            return None
+            
+    except Exception as e:
+        st.error(f"Error processing file: {str(e)}")
+        return None
+
+def process_industrial_addresses_with_realtime_ui(addresses, llm, progress_bar, status_text, progress_log):
+    """
+    Process industrial addresses with real-time UI updates.
+    
+    Args:
+        addresses: List of addresses to process
+        llm: Language model instance
+        progress_bar: Streamlit progress bar component
+        status_text: Streamlit text component for status
+        progress_log: Streamlit component for progress log
+        
+    Returns:
+        Tuple of (results, csv_buffer)
+    """
+    import datetime
+    import re
+    import io
+    import pandas as pd
+    
+    results = []
+    progress_messages = []
+    total_addresses = len(addresses)
+    
+    def log_progress_realtime(message, current_index=None):
+        """Log progress with real-time UI updates."""
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        formatted_message = f"[{timestamp}] {message}"
+        
+        # Always log to console
+        print(formatted_message)
+        
+        # Add to progress messages
+        progress_messages.append(formatted_message)
+        
+        # Update progress bar if index provided
+        if current_index is not None:
+            progress = (current_index) / total_addresses
+            progress_bar.progress(progress)
+            status_text.info(f"Processing {current_index}/{total_addresses}: {message}")
+        
+        # Update progress log (show all messages with scrollbar)
+        progress_log.text_area(
+            "Processing Log",
+            value="\n".join(progress_messages),
+            height=200,
+            disabled=True,
+            key=f"progress_log_{len(progress_messages)}"
+        )
+    
+    # Get system rules
+    try:
+        from enforcement_processor import get_occupant_rules, get_compliance_rules, create_csv_for_download
+        occupant_rules = get_occupant_rules()
+        compliance_rules = get_compliance_rules()
+    except Exception as e:
+        st.error(f"Failed to load processing rules: {str(e)}")
+        return [], None
+    
+    today = datetime.date.today().isoformat()
+    
+    log_progress_realtime(f"🚀 Starting enhanced processing of {total_addresses} address(es)...")
+    
+    for i in range(len(addresses)):
+        try:
+            address = addresses[i]
+            current_step = i + 1
+            log_progress_realtime(f"📍 Processing {address}", current_step)
+            
+            # Initialize variables
+            address_search_results_raw = ""
+            address_search_results_raw_variant = ""
+            confirmed_occupant_google_search_results = ""
+            verified_occupant_response = ""
+            verification_analysis = ""
+            confirmed_occupant = ""
+            compliance_level = "Need more information"
+            rationale = "Unable to confirm occupant, compliance assessment not performed."
+            
+            # Step 1: Google search for address
+            log_progress_realtime(f"🔍 Searching for address information...", current_step)
+            
+            try:
+                from google_search import google_search_entity
+                
+                # Original address search
+                address_search_query = f"{address}"
+                address_search_results_raw = google_search_entity(address_search_query)
+                
+                # Variant address search
+                address_search_query_variant = f"address {address}"
+                address_search_results_raw_variant = google_search_entity(address_search_query_variant)
+                
+                # Check if original search failed
+                if address_search_results_raw is None:
+                    address_search_results_raw = "No address search results available"
+                
+                # Check if variant search failed
+                if address_search_results_raw_variant is None:
+                    address_search_results_raw_variant = "No variant address search results available"
+                
+                # Log success if at least one search succeeded
+                if address_search_results_raw != "No address search results available" or address_search_results_raw_variant != "No variant address search results available":
+                    log_progress_realtime(f"✅ Address search completed", current_step)
+                else:
+                    log_progress_realtime(f"❌ Both address searches failed", current_step)
+                        
+            except Exception as search_error:
+                address_search_results_raw = f"Address search failed: {str(search_error)}"
+                address_search_results_raw_variant = f"Variant address search failed: {str(search_error)}"
+                log_progress_realtime(f"❌ Address search failed", current_step)
+            
+            # Step 2: LLM Analysis for occupant identification
+            log_progress_realtime(f"🤖 Analyzing occupant...", current_step)
+            
+            from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+            
+            occupant_prompt = f"""
+Today's date is {today}
+Identify the current occupant of: {address} using the search results below.
+
+<google_search_results_original>
+{address_search_results_raw}
+</google_search_results_original>
+
+<google_search_results_variant>
+{address_search_results_raw_variant}
+</google_search_results_variant>
+
+---
+
+### FORMAT
+
+Selected Occupant: <Business name from snippets or "Need more information">
+---End of Confirmed Occupant---
+
+Verification Analysis:
+- Matched snippet(s): (Quote the relevant snippets that matches address, -url, -label credible/non-credible source and -source date)
+- Business Summary: (Summarise the core and other business activities of the selected occupant)
+- Reasoning: (Show your responses for each step. Why that entity was chosen, or why no match could be confirmed)
+---End of Verification---
+"""
+
+            prompt = ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(occupant_rules),
+                HumanMessagePromptTemplate.from_template(occupant_prompt)
+            ])
+
+            # Runnable chain
+            occupant_chain = prompt | llm
+
+            try:
+                # Step 1: Identify the occupant and verification analysis
+                verified_occupant_response = occupant_chain.invoke({}).content.strip()
+                log_progress_realtime(f"✅ Occupant analysis completed", current_step)
+
+                # Parse the response using regex
+                confirmed_occupant_match = re.search(r"Selected Occupant:\s*(.*?)\s*---End of Confirmed Occupant---", verified_occupant_response, re.DOTALL)
+                confirmed_occupant = confirmed_occupant_match.group(1).strip() if confirmed_occupant_match else "Need more information"
+
+                verification_analysis_match = re.search(r"Verification Analysis:\s*(.*?)\s*---End of Verification---", verified_occupant_response, re.DOTALL)
+                verification_analysis = verification_analysis_match.group(1).strip() if verification_analysis_match else "Analysis not available"
+                
+            except Exception as llm_error:
+                log_progress_realtime(f"❌ Analysis failed", current_step)
+                confirmed_occupant = "Error"
+                verification_analysis = f"LLM analysis failed: {str(llm_error)}"
+
+            # Step 3: Compliance assessment if occupant is identified
+            if confirmed_occupant == "Need more information":
+                compliance_level = "Need more information"
+                rationale = "Unable to confirm occupant, compliance assessment not performed."
+                confirmed_occupant_google_search_results = "No occupant identified for search"
+            else:
+                log_progress_realtime(f"🔍 Searching for occupant information...", current_step)
+
+                # Step 2: Google Search for Occupant
+                try:
+                    from google_search import google_search_entity
+                    confirmed_occupant_google_search_results = google_search_entity(confirmed_occupant)
+                    
+                    if confirmed_occupant_google_search_results is None:
+                        confirmed_occupant_google_search_results = "No occupant search results available"
+                        log_progress_realtime(f"⚠️ Occupant search failed", current_step)
+                    else:
+                        log_progress_realtime(f"✅ Occupant search completed", current_step)
+                            
+                except Exception as search_error:
+                    confirmed_occupant_google_search_results = f"Occupant search failed: {str(search_error)}"
+                    log_progress_realtime(f"⚠️ Occupant search failed", current_step)
+
+                # Step 3: Compliance assessment
+                log_progress_realtime(f"⚖️ Assessing compliance...", current_step)
+                
+                compliance_prompt = f"""
+Assess the occupant's operations based on the following information:
+
+### Selected Occupant: {confirmed_occupant}
+
+Google Search Result of Occupant's name: {confirmed_occupant_google_search_results}
+Verification Analysis: {verification_analysis}
+
+Then evaluate whether the occupant's business operations are reasonably aligned with B1 use based on standard land use interpretations in Singapore.
+
+---
+
+### FORMAT
+
+Compliance level: <Unauthorised Use / Authorised Use / Likely Authorised Use / Likely Unauthorised Use / Need more information >
+---End of Compliance---
+Rationale: <Detailed rationale for compliance level>
+---End of Rationale---
+"""
+
+                complianceprompt = ChatPromptTemplate.from_messages([
+                    SystemMessagePromptTemplate.from_template(compliance_rules),
+                    HumanMessagePromptTemplate.from_template(compliance_prompt)
+                ])
+
+                compliance_chain = complianceprompt | llm
+
+                try:
+                    verified_compliance_response = compliance_chain.invoke({}).content.strip()
+                    log_progress_realtime(f"✅ Compliance assessment completed", current_step)
+
+                    # Parse compliance response using regex
+                    compliance_match = re.search(r"(?i)\**Compliance Level:\s*(.*?)\s*-{3,}End of Compliance-{3,}", verified_compliance_response, re.DOTALL)
+                    rationale_match = re.search(r"(?i)\**Rationale:\s*(.*?)\s*-{3,}End of Rationale-{3,}", verified_compliance_response, re.DOTALL)
+
+                    compliance_level = compliance_match.group(1).strip() if compliance_match else "Assessment failed"
+                    rationale = rationale_match.group(1).strip() if rationale_match else "Rationale not available"
+                    
+                except Exception as compliance_error:
+                    log_progress_realtime(f"❌ Compliance assessment failed", current_step)
+                    compliance_level = "Assessment failed"
+                    rationale = f"Compliance assessment failed: {str(compliance_error)}"
+            
+            # Create result row with all 7 columns
+            result = [
+                address,                                    # address
+                confirmed_occupant,                         # confirmed_occupant
+                verification_analysis,                      # verification_analysis
+                compliance_level,                           # compliance_level
+                rationale,                                 # rationale
+                address_search_results_raw if address_search_results_raw else "N/A",  # google_address_search_results
+                confirmed_occupant_google_search_results if confirmed_occupant_google_search_results else "N/A"  # confirmed_occupant_google_search_results
+            ]
+            
+            results.append(result)
+            log_progress_realtime(f"✅ Processing completed for {address}", current_step)
+            
+        except Exception as e:
+            error_msg = f"❌ Error processing {address}: {str(e)}"
+            log_progress_realtime(error_msg, current_step)
+            
+            # Add error result to maintain structure
+            results.append([
+                address,
+                "Error",
+                str(e),
+                "Unknown",
+                f"Processing failed: {str(e)}",
+                "N/A",
+                "N/A"
+            ])
+    
+    log_progress_realtime(f"🎉 Completed processing {len(results)} address(es)!")
+    
+    # Create CSV buffer
+    csv_buffer = create_csv_for_download(results)
+    
+    return results, csv_buffer
+
+def display_file_upload_page():
+    """Display file upload page with address type selection."""
+    # Display instruction at the top
+    st.markdown("### Upload your file and then select the address type")
+    
+    # File uploader at the top
+    uploaded_file = st.file_uploader(
+        "Choose a file",
+        type=['csv'],
+        help="Upload your file containing addresses"
+    )
+    
+    # Selectbox for address type
+    address_type = st.selectbox(
+        "Select the address type",
+        options=["", "shophouse", "industrial"],
+        help="Choose the type of addresses in your file"
+    )
+    
+    # Display selected information
+    if uploaded_file is not None:
+        st.success(f"File uploaded: {uploaded_file.name}")
+    
+    if address_type:
+        st.info(f"Selected address type: {address_type}")
+    
+    # Submit button
+    submit_button = st.button("Submit", type="primary", use_container_width=True)
+    
+    # Process file when submitted
+    if submit_button:
+        if uploaded_file is None:
+            st.error("Please upload a file first.")
+        elif not address_type:
+            st.error("Please select an address type.")
+        else:
+            # Initialize LLM (reuse from existing code)
+            if 'llm' not in st.session_state:
+                try:
+                    from langchain_openai import ChatOpenAI
+                    llm = ChatOpenAI(
+                        model="gpt-4o",
+                        api_key=st.secrets["OPENAI_API_KEY"],
+                        temperature=0
+                    )
+                    st.session_state.llm = llm
+                except Exception as e:
+                    st.error(f"Failed to initialize language model: {str(e)}")
+                    return uploaded_file, address_type, submit_button
+            
+            # Process the selected address type
+            st.markdown(f"### Processing {address_type.title()} Addresses")
+            
+            with st.spinner(f"Processing {address_type} addresses..."):
+                result = process_csv_with_ui(uploaded_file, address_type, st.session_state.llm)
+            
+            if result:
+                results, csv_buffer = result
+                
+                # Success message
+                st.success(f"✅ Processing completed! Processed {len(results)} addresses.")
+                
+                # Download button
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"{address_type}_processed_{timestamp}.csv"
+                
+                st.download_button(
+                    label=f"📥 Download {address_type.title()} Results",
+                    data=csv_buffer.getvalue(),
+                    file_name=filename,
+                    mime="text/csv",
+                    use_container_width=True
+                )
+    
+    return uploaded_file, address_type, submit_button
 
 def initialize_conversation():
     """
@@ -372,7 +767,7 @@ def main():
     st.sidebar.markdown("---")
 
     # Sidebar for Mode Selection
-    mode = st.sidebar.radio("Select Mode:", options=["Google Search Results", "Enforcement"], index=1)
+    mode = st.sidebar.radio("Select Mode:", options=["Compliance", "Enforcement"], index=1)
 
     st.sidebar.markdown("---")
 
@@ -450,7 +845,7 @@ def main():
             with st.chat_message(role, avatar=avatar_image):
                 st.write(message["content"])
     else:
-        display_streamlit_updates()
+        uploaded_file, address_type, submit_button = display_file_upload_page()
 
 if __name__ == "__main__":
     main()

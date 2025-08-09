@@ -30,10 +30,12 @@ Use secrets.toml an add your OpenAI API key or set your enviroment variable OPEN
 To run Enforcement, execute the following command:
 
 ```bash
-streamlit run streamlit_app.py
+streamlit run streamlit_main.py
 ```
 
 This will start the Streamlit server, and you should see output indicating the local URL where the app is being served, typically `http://localhost:8501`.
+
+**Note**: The application has been restructured for better maintainability. If you encounter the legacy `streamlit_app.py`, it will redirect you to use the new modular structure.
 
 ## Using Enforcement
 
