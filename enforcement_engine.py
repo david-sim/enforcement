@@ -11,20 +11,68 @@ from search_service import google_search_entity
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 
 
-def get_occupant_rules() -> str:
-    """Get occupant rules from secrets, with fallback for testing"""
+def generate_variant(address):
+    """
+    Generate a variant address format for shophouse addresses.
+    Converts between unit notation (#01-XX) and suffix notation (A, B, C, D).
+    
+    Args:
+        address: The original address string
+        
+    Returns:
+        Variant address string or None if no conversion is possible
+    """
+    unit_pattern = re.match(r"^(\d+)\s+(.*)\s+#(0[1-5])-\d{2}\s+(Singapore\s+\d{6})$", address)
+    if unit_pattern:
+        block = unit_pattern.group(1)
+        street = unit_pattern.group(2).strip()
+        floor = unit_pattern.group(3)
+        postal = unit_pattern.group(4)
+
+        floor_to_suffix = {"01" : "", "02": "A", "03": "B", "04": "C", "05": "D"}
+        suffix = floor_to_suffix.get(floor)
+        if suffix:
+            return f"{block}{suffix} {street} {postal}"
+        else:
+            return None
+
+    suffix_pattern = re.match(r"^(\d+)([A-D])\s+(.*)\s+(Singapore\s+\d{6})$", address)
+    if suffix_pattern:
+        block = suffix_pattern.group(1)
+        suffix = suffix_pattern.group(2)
+        street = suffix_pattern.group(3).strip()
+        postal = suffix_pattern.group(4)
+
+        suffix_to_floor = {"A": "02", "B": "03", "C": "04", "D": "05"}
+        floor = suffix_to_floor.get(suffix)
+        if floor:
+            return f"{block} {street} #{floor}-01 {postal}"
+        else:
+            return None
+
+    return None
+
+
+def get_occupant_rules(address_type: str = "industrial") -> str:
+    """Get occupant rules from secrets based on address type, with fallback for testing"""
     try:
         import streamlit as st
-        return st.secrets.get("INDUSTRIAL_OCCUPANT_RULES", "")
+        if address_type.lower() == "shophouse":
+            return st.secrets.get("SHOPHOUSE_OCCUPANT_RULES", "")
+        else:
+            return st.secrets.get("INDUSTRIAL_OCCUPANT_RULES", "")
     except:
         return ""
 
 
-def get_compliance_rules() -> str:
-    """Get compliance rules from secrets, with fallback for testing"""
+def get_compliance_rules(address_type: str = "industrial") -> str:
+    """Get compliance rules from secrets based on address type, with fallback for testing"""
     try:
         import streamlit as st
-        return st.secrets.get("INDUSTRIAL_COMPLIANCE_RULES", "")
+        if address_type.lower() == "shophouse":
+            return st.secrets.get("SHOPHOUSE_COMPLIANCE_RULES", "")
+        else:
+            return st.secrets.get("INDUSTRIAL_COMPLIANCE_RULES", "")
     except:
         return ""
 
@@ -125,6 +173,8 @@ def create_csv_for_download(results_data: List[List[str]]) -> io.BytesIO:
         'address',
         'confirmed_occupant', 
         'verification_analysis',
+        'primary_approved_use',
+        'secondary_approved_use',
         'compliance_level',
         'rationale',
         'google_address_search_results',
@@ -143,7 +193,7 @@ def create_csv_for_download(results_data: List[List[str]]) -> io.BytesIO:
     return csv_buffer
 
 
-def process_single_address(address: str, llm: Any, primary_approved_use: str = "", secondary_approved_use: str = "", progress_callback: Optional[Callable[[str], None]] = None) -> Dict[str, str]:
+def process_single_address(address: str, llm: Any, primary_approved_use: str = "", secondary_approved_use: str = "", address_type: str = "industrial", progress_callback: Optional[Callable[[str], None]] = None) -> Dict[str, str]:
     """
     Process a single address through the complete enforcement workflow.
     
@@ -152,6 +202,7 @@ def process_single_address(address: str, llm: Any, primary_approved_use: str = "
         llm: Language model instance
         primary_approved_use: Primary approved use for the address
         secondary_approved_use: Secondary approved use for the address
+        address_type: Type of address processing ("shophouse" or "industrial")
         progress_callback: Optional callback function for progress updates
     
     Returns:
@@ -180,9 +231,9 @@ def process_single_address(address: str, llm: Any, primary_approved_use: str = "
     compliance_level = "Need more information"
     rationale = "Unable to confirm occupant, compliance assessment not performed."
     
-    # Get system rules
-    occupant_rules = get_occupant_rules()
-    compliance_rules = get_compliance_rules()
+    # Get system rules based on address type
+    occupant_rules = get_occupant_rules(address_type)
+    compliance_rules = get_compliance_rules(address_type)
     today = datetime.date.today().isoformat()
     
     # Step 1: Google search for address
@@ -199,8 +250,21 @@ def process_single_address(address: str, llm: Any, primary_approved_use: str = "
         
         address_search_results_raw = google_search_entity(address_search_query)
         
-        # Variant address search - use cleaned address
-        address_search_query_variant = f"address {clean_address}"
+        # Variant address search - different logic for shophouse vs industrial
+        if address_type.lower() == "shophouse":
+            # For shophouse, try to generate an address format variant
+            variant_address = generate_variant(clean_address)
+            if variant_address:
+                address_search_query_variant = variant_address
+                log_progress(f"🔄 Generated shophouse variant: '{variant_address}'")
+            else:
+                # Fallback to standard variant if no format conversion possible
+                address_search_query_variant = f"address {clean_address}"
+                log_progress(f"🔄 Using fallback variant for shophouse: 'address {clean_address}'")
+        else:
+            # For industrial, use the standard variant
+            address_search_query_variant = f"address {clean_address}"
+        
         address_search_results_raw_variant = google_search_entity(address_search_query_variant)
 
         # Check if searches failed
@@ -356,6 +420,8 @@ Rationale: <Detailed rationale for compliance level>
         'address': address,
         'confirmed_occupant': confirmed_occupant,
         'verification_analysis': verification_analysis,
+        'primary_approved_use': primary_approved_use,
+        'secondary_approved_use': secondary_approved_use,
         'compliance_level': compliance_level,
         'rationale': rationale,
         'google_address_search_results': address_search_results_raw if address_search_results_raw else "N/A",
@@ -364,7 +430,7 @@ Rationale: <Detailed rationale for compliance level>
     }
 
 
-def process_addresses_batch(addresses, llm, primary_approved_use_list=None, secondary_approved_use_list=None, progress_callback=None):
+def process_addresses_batch(addresses, llm, primary_approved_use_list=None, secondary_approved_use_list=None, address_type="industrial", progress_callback=None):
     """
     Process multiple addresses in batch.
     
@@ -373,6 +439,7 @@ def process_addresses_batch(addresses, llm, primary_approved_use_list=None, seco
         llm: Language model instance
         primary_approved_use_list: List of primary approved uses (same length as addresses)
         secondary_approved_use_list: List of secondary approved uses (same length as addresses)
+        address_type: Type of address processing ("shophouse" or "industrial")
         progress_callback: Optional callback function for progress updates
     
     Returns:
@@ -398,11 +465,13 @@ def process_addresses_batch(addresses, llm, primary_approved_use_list=None, seco
                 primary_use = primary_approved_use_list[i] if i < len(primary_approved_use_list) else ""
                 secondary_use = secondary_approved_use_list[i] if i < len(secondary_approved_use_list) else ""
                 
-                result = process_single_address(address, llm, primary_use, secondary_use, batch_progress_callback)
+                result = process_single_address(address, llm, primary_use, secondary_use, address_type, batch_progress_callback)
                 results.append([
                     result['address'],
                     result['confirmed_occupant'],
                     result['verification_analysis'],
+                    result['primary_approved_use'],
+                    result['secondary_approved_use'],
                     result['compliance_level'],
                     result['rationale'],
                     result['google_address_search_results'],
@@ -415,10 +484,15 @@ def process_addresses_batch(addresses, llm, primary_approved_use_list=None, seco
                     progress_callback(error_msg, current_index=i+1, total=total_addresses)
                 
                 # Add error result to maintain structure
+                primary_use = primary_approved_use_list[i] if i < len(primary_approved_use_list) else ""
+                secondary_use = secondary_approved_use_list[i] if i < len(secondary_approved_use_list) else ""
+                
                 results.append([
                     address,
                     "Error",
                     str(e),
+                    primary_use,
+                    secondary_use,
                     "Unknown",
                     f"Processing failed: {str(e)}",
                     "N/A",
@@ -448,6 +522,8 @@ def process_addresses_batch(addresses, llm, primary_approved_use_list=None, seco
             "Error",
             "Critical processing failure",
             str(e),
+            "",  # primary_approved_use
+            "",  # secondary_approved_use
             "Unknown",
             f"Batch processing failed: {str(e)}",
             "N/A",

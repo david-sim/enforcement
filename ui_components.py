@@ -150,7 +150,7 @@ def process_file_with_ui(uploaded_file: Any, address_type: str) -> Tuple[bool, O
     with st.spinner(f"Processing {address_type} addresses..."):
             try:
                 print(f"🔍 UI Debug: About to call process_addresses_batch with {len(addresses)} addresses")
-                result = process_addresses_batch(addresses, llm, primary_approved_use_list, secondary_approved_use_list, progress_callback)
+                result = process_addresses_batch(addresses, llm, primary_approved_use_list, secondary_approved_use_list, address_type, progress_callback)
                 print(f"🔍 UI Debug: Got result of type: {type(result)}")
                 
                 # Debug: Check what we got back
