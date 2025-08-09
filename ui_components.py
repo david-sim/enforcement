@@ -134,11 +134,40 @@ def process_file_with_ui(uploaded_file: Any, address_type: str) -> Tuple[bool, O
             st.error("No addresses found in the uploaded file.")
             return False, None
             
-        st.info(f"Found {len(addresses)} addresses to process")
+        st.success(f"✅ CSV validation passed! Found {len(addresses)} addresses to process")
+        
+    except ValueError as csv_error:
+        error_msg = str(csv_error)
+        st.error(f"❌ CSV Processing Error")
+        
+        # Check if it's a validation error and provide specific guidance
+        if "CSV validation failed" in error_msg:
+            st.error("**File Validation Issues:**")
+            st.error(error_msg)
+            
+            # Provide specific guidance based on address type
+            st.info("**Expected CSV Format:**")
+            if address_type.lower() == "shophouse":
+                st.code("""
+Column 1: Address (Required) - e.g., "123 Smith Street #02-01 Singapore 123456"  
+Column 2: Primary Approved Use (Optional) - e.g., "Shophouse"
+Column 3: Secondary Approved Use (Optional) - e.g., "Retail"
+""")
+            elif address_type.lower() == "industrial":  
+                st.code("""
+Column 1: Address (Required) - e.g., "1 Industrial Park Road Singapore 123456"
+Column 2: Primary Approved Use (Optional) - e.g., "Industrial"  
+Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing"
+""")
+        else:
+            st.error(error_msg)
+            st.error("Please check that your file is a valid CSV with addresses in the first column.")
+            
+        return False, None
         
     except Exception as csv_error:
-        st.error(f"❌ Error processing CSV file: {str(csv_error)}")
-        st.error("Please check that your file is a valid CSV with addresses in the first column.")
+        st.error(f"❌ Unexpected error processing CSV file: {str(csv_error)}")
+        st.error("Please check that your file is a valid CSV format.")
         return False, None
         
     # Create progress handlers

@@ -9,6 +9,7 @@ import io
 from typing import Dict, List, Tuple, Optional, Callable, Any, Union
 from search_service import google_search_entity
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+from csv_processor import process_csv_with_validation, create_csv_for_download, CSVValidationError
 
 
 def generate_variant(address):
@@ -80,6 +81,7 @@ def get_compliance_rules(address_type: str = "industrial") -> str:
 def process_csv(command: str, csv_file) -> Dict[str, List[str]]:
     """
     Process the uploaded CSV file based on the command ("shophouse" or "industrial").
+    This function now uses the modular csv_processor for validation and processing.
 
     Args:
         command: The command, either "shophouse" or "industrial"
@@ -87,110 +89,16 @@ def process_csv(command: str, csv_file) -> Dict[str, List[str]]:
 
     Returns:
         Dictionary containing the processed data
-    """
-    csv_file.seek(0)
-    
-    # Try to detect if the CSV uses semicolon separator
-    # Handle both string and bytes file objects
-    try:
-        first_line = csv_file.readline()
-        # If it's bytes, decode it
-        if isinstance(first_line, bytes):
-            first_line = first_line.decode('utf-8')
-        first_line = first_line.strip()
-        csv_file.seek(0)
-    except Exception as e:
-        print(f"⚠️ Error reading first line: {e}")
-        first_line = ""
-        csv_file.seek(0)
-    
-    # Check if the first line contains semicolons (might be semicolon-separated)
-    try:
-        if first_line and ';' in first_line and ',' not in first_line:
-            print("🔍 Detected semicolon-separated CSV")
-            df = pd.read_csv(csv_file, sep=';', header=0)
-        else:
-            print("🔍 Using standard comma-separated CSV")
-            df = pd.read_csv(csv_file, header=0)
-    except Exception as e:
-        print(f"❌ Error reading CSV: {e}")
-        # Try alternative encoding or approach
-        csv_file.seek(0)
-        try:
-            df = pd.read_csv(csv_file, header=0, encoding='utf-8')
-            print("✅ Successfully read CSV with utf-8 encoding")
-        except Exception as e2:
-            print(f"❌ Failed with utf-8 too: {e2}")
-            raise ValueError(f"Could not read CSV file: {e2}")
-    
-    # Debug: Print DataFrame structure
-    print(f"📊 CSV loaded: {df.shape[0]} rows, {df.shape[1]} columns")
-    if len(df) > 0:
-        print(f"   First address: '{df.iloc[0, 0]}'")
-    print("---")
-
-    if command.lower() == "shophouse":
-        addresses = df.iloc[:, 0].dropna().tolist()
-        primary_approved_use = df.iloc[:, 1].dropna().tolist() if df.shape[1] > 1 else []
-        secondary_approved_use = df.iloc[:, 2].dropna().tolist() if df.shape[1] > 2 else []
         
-        # Debug: Print extracted data
-        print(f"📍 Extracted {len(addresses)} addresses for {command}")
-            
-        return {
-            "addresses": addresses,
-            "primary_approved_use": primary_approved_use,
-            "secondary_approved_use": secondary_approved_use
-        }
-    elif command.lower() == "industrial":
-        addresses = df.iloc[:, 0].dropna().tolist()
-        primary_approved_use = df.iloc[:, 1].dropna().tolist() if df.shape[1] > 1 else []
-        secondary_approved_use = df.iloc[:, 2].dropna().tolist() if df.shape[1] > 2 else []
-        
-        # Debug: Print extracted data  
-        print(f"📍 Extracted {len(addresses)} addresses for {command}")
-            
-        return {
-            "addresses": addresses,
-            "primary_approved_use": primary_approved_use,
-            "secondary_approved_use": secondary_approved_use
-        }
-    else:
-        raise ValueError("Invalid command. Must be 'shophouse' or 'industrial'.")
-
-
-def create_csv_for_download(results_data: List[List[str]]) -> io.BytesIO:
+    Raises:
+        CSVValidationError: If CSV validation fails
+        ValueError: If command is invalid
     """
-    Create a CSV file buffer for download with the specified columns.
-    
-    Args:
-        results_data: List of result rows with all required columns
-    
-    Returns:
-        BytesIO buffer containing the CSV data
-    """
-    columns = [
-        'address',
-        'confirmed_occupant', 
-        'verification_analysis',
-        'primary_approved_use',
-        'secondary_approved_use',
-        'compliance_level',
-        'rationale',
-        'google_address_search_results',
-        'google_address_search_results_variant',
-        'confirmed_occupant_google_search_results'
-    ]
-    
-    # Create DataFrame
-    df = pd.DataFrame(results_data, columns=columns)
-    
-    # Create CSV buffer
-    csv_buffer = io.BytesIO()
-    df.to_csv(csv_buffer, index=False, encoding='utf-8')
-    csv_buffer.seek(0)
-    
-    return csv_buffer
+    try:
+        return process_csv_with_validation(command, csv_file)
+    except CSVValidationError as e:
+        # Convert CSV validation errors to ValueError for backward compatibility
+        raise ValueError(f"CSV validation failed: {str(e)}")
 
 
 def process_single_address(address: str, llm: Any, primary_approved_use: str = "", secondary_approved_use: str = "", address_type: str = "industrial", progress_callback: Optional[Callable[[str], None]] = None) -> Dict[str, str]:
@@ -259,7 +167,7 @@ def process_single_address(address: str, llm: Any, primary_approved_use: str = "
                 log_progress(f"🔄 Generated shophouse variant: '{variant_address}'")
             else:
                 # Fallback to standard variant if no format conversion possible
-                address_search_query_variant = f"address {clean_address}"
+                address_search_query_variant = f"{clean_address}"
                 log_progress(f"🔄 Using fallback variant for shophouse: 'address {clean_address}'")
         else:
             # For industrial, use the standard variant
@@ -373,11 +281,10 @@ Assess the occupant's operations based on the following information:
 Google Search Result of Occupant's name: {confirmed_occupant_google_search_results}
 Verification Analysis: {verification_analysis}
 
-Primary approved use: {primary_approved_use}
-Secondary approved use: {secondary_approved_use}
-
 Evaluate whether the occupant’s business operations are reasonably aligned with the approved use classification based on standard land use interpretations in Singapore.
 
+Primary approved use: {primary_approved_use}
+Secondary approved use: {secondary_approved_use}
 
 ---
 
