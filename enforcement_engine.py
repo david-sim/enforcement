@@ -41,12 +41,54 @@ def process_csv(command: str, csv_file) -> Dict[str, List[str]]:
         Dictionary containing the processed data
     """
     csv_file.seek(0)
-    df = pd.read_csv(csv_file, header=0)
+    
+    # Try to detect if the CSV uses semicolon separator
+    # Handle both string and bytes file objects
+    try:
+        first_line = csv_file.readline()
+        # If it's bytes, decode it
+        if isinstance(first_line, bytes):
+            first_line = first_line.decode('utf-8')
+        first_line = first_line.strip()
+        csv_file.seek(0)
+    except Exception as e:
+        print(f"⚠️ Error reading first line: {e}")
+        first_line = ""
+        csv_file.seek(0)
+    
+    # Check if the first line contains semicolons (might be semicolon-separated)
+    try:
+        if first_line and ';' in first_line and ',' not in first_line:
+            print("🔍 Detected semicolon-separated CSV")
+            df = pd.read_csv(csv_file, sep=';', header=0)
+        else:
+            print("🔍 Using standard comma-separated CSV")
+            df = pd.read_csv(csv_file, header=0)
+    except Exception as e:
+        print(f"❌ Error reading CSV: {e}")
+        # Try alternative encoding or approach
+        csv_file.seek(0)
+        try:
+            df = pd.read_csv(csv_file, header=0, encoding='utf-8')
+            print("✅ Successfully read CSV with utf-8 encoding")
+        except Exception as e2:
+            print(f"❌ Failed with utf-8 too: {e2}")
+            raise ValueError(f"Could not read CSV file: {e2}")
+    
+    # Debug: Print DataFrame structure
+    print(f"📊 CSV loaded: {df.shape[0]} rows, {df.shape[1]} columns")
+    if len(df) > 0:
+        print(f"   First address: '{df.iloc[0, 0]}'")
+    print("---")
 
     if command.lower() == "shophouse":
         addresses = df.iloc[:, 0].dropna().tolist()
         primary_approved_use = df.iloc[:, 1].dropna().tolist() if df.shape[1] > 1 else []
         secondary_approved_use = df.iloc[:, 2].dropna().tolist() if df.shape[1] > 2 else []
+        
+        # Debug: Print extracted data
+        print(f"📍 Extracted {len(addresses)} addresses for {command}")
+            
         return {
             "addresses": addresses,
             "primary_approved_use": primary_approved_use,
@@ -56,6 +98,10 @@ def process_csv(command: str, csv_file) -> Dict[str, List[str]]:
         addresses = df.iloc[:, 0].dropna().tolist()
         primary_approved_use = df.iloc[:, 1].dropna().tolist() if df.shape[1] > 1 else []
         secondary_approved_use = df.iloc[:, 2].dropna().tolist() if df.shape[1] > 2 else []
+        
+        # Debug: Print extracted data  
+        print(f"📍 Extracted {len(addresses)} addresses for {command}")
+            
         return {
             "addresses": addresses,
             "primary_approved_use": primary_approved_use,
@@ -118,6 +164,12 @@ def process_single_address(address: str, llm: Any, primary_approved_use: str = "
 
     log_progress(f"📍 Processing {address}")
     
+    # Clean the address - remove any extra data that might be semicolon-separated
+    clean_address = address.split(';')[0].strip() if ';' in address else address.strip()
+    
+    if clean_address != address:
+        log_progress(f"🧹 Cleaned address: '{address}' → '{clean_address}'")
+    
     # Initialize variables
     address_search_results_raw = ""
     address_search_results_raw_variant = ""
@@ -137,12 +189,18 @@ def process_single_address(address: str, llm: Any, primary_approved_use: str = "
     log_progress(f"🔍 Searching for address information...")
     
     try:
-        # Original address search
-        address_search_query = f"{address}"
+        # Original address search - use cleaned address
+        address_search_query = f"{clean_address}"
+        
+        # Debug: Show what we're actually searching for
+        log_progress(f"🔎 Searching with cleaned address: '{clean_address}'")
+        if clean_address != address:
+            log_progress(f"🔄 Original was: '{address}'")
+        
         address_search_results_raw = google_search_entity(address_search_query)
         
-        # Variant address search
-        address_search_query_variant = f"address {address}"
+        # Variant address search - use cleaned address
+        address_search_query_variant = f"address {clean_address}"
         address_search_results_raw_variant = google_search_entity(address_search_query_variant)
 
         # Check if searches failed
@@ -320,57 +378,86 @@ def process_addresses_batch(addresses, llm, primary_approved_use_list=None, seco
     Returns:
         Tuple of (results_list, csv_buffer)
     """
-    results = []
-    total_addresses = len(addresses)
-    
-    # Handle default values for approved use lists
-    if primary_approved_use_list is None:
-        primary_approved_use_list = [""] * len(addresses)
-    if secondary_approved_use_list is None:
-        secondary_approved_use_list = [""] * len(addresses)
-    
-    def batch_progress_callback(message):
-        if progress_callback:
-            progress_callback(message, current_index=len(results) + 1, total=total_addresses)
-    
-    for i, address in enumerate(addresses):
-        try:
-            # Get the corresponding approved uses for this address
-            primary_use = primary_approved_use_list[i] if i < len(primary_approved_use_list) else ""
-            secondary_use = secondary_approved_use_list[i] if i < len(secondary_approved_use_list) else ""
-            
-            result = process_single_address(address, llm, primary_use, secondary_use, batch_progress_callback)
-            results.append([
-                result['address'],
-                result['confirmed_occupant'],
-                result['verification_analysis'],
-                result['compliance_level'],
-                result['rationale'],
-                result['google_address_search_results'],
-                result['google_address_search_results_variant'],
-                result['confirmed_occupant_google_search_results']
-            ])
-        except Exception as e:
-            error_msg = f"❌ Error processing {address}: {str(e)}"
+    try:
+        results = []
+        total_addresses = len(addresses)
+        
+        # Handle default values for approved use lists
+        if primary_approved_use_list is None:
+            primary_approved_use_list = [""] * len(addresses)
+        if secondary_approved_use_list is None:
+            secondary_approved_use_list = [""] * len(addresses)
+        
+        def batch_progress_callback(message):
             if progress_callback:
-                progress_callback(error_msg, current_index=i+1, total=total_addresses)
-            
-            # Add error result to maintain structure
-            results.append([
-                address,
-                "Error",
-                str(e),
-                "Unknown",
-                f"Processing failed: {str(e)}",
-                "N/A",
-                "N/A",
-                "N/A"
-            ])
+                progress_callback(message, current_index=len(results) + 1, total=total_addresses)
+        
+        for i, address in enumerate(addresses):
+            try:
+                # Get the corresponding approved uses for this address
+                primary_use = primary_approved_use_list[i] if i < len(primary_approved_use_list) else ""
+                secondary_use = secondary_approved_use_list[i] if i < len(secondary_approved_use_list) else ""
+                
+                result = process_single_address(address, llm, primary_use, secondary_use, batch_progress_callback)
+                results.append([
+                    result['address'],
+                    result['confirmed_occupant'],
+                    result['verification_analysis'],
+                    result['compliance_level'],
+                    result['rationale'],
+                    result['google_address_search_results'],
+                    result['google_address_search_results_variant'],
+                    result['confirmed_occupant_google_search_results']
+                ])
+            except Exception as e:
+                error_msg = f"❌ Error processing {address}: {str(e)}"
+                if progress_callback:
+                    progress_callback(error_msg, current_index=i+1, total=total_addresses)
+                
+                # Add error result to maintain structure
+                results.append([
+                    address,
+                    "Error",
+                    str(e),
+                    "Unknown",
+                    f"Processing failed: {str(e)}",
+                    "N/A",
+                    "N/A",
+                    "N/A"
+                ])
     
-    if progress_callback:
-        progress_callback(f"🎉 Completed processing {len(results)} address(es)!")
-    
-    # Create CSV buffer
-    csv_buffer = create_csv_for_download(results)
-    
-    return results, csv_buffer
+        if progress_callback:
+            progress_callback(f"🎉 Completed processing {len(results)} address(es)!")
+        
+        # Create CSV buffer
+        csv_buffer = create_csv_for_download(results)
+        
+        # Debug: Ensure we're not returning None
+        print(f"🔍 Debug: About to return results={type(results)}, csv_buffer={type(csv_buffer)}")
+        
+        return results, csv_buffer
+        
+    except Exception as e:
+        # If any error occurs in the entire batch processing, return error results
+        print(f"❌ Critical error in batch processing: {str(e)}")
+        if progress_callback:
+            progress_callback(f"❌ Critical error: {str(e)}")
+        
+        # Return empty results with error message
+        error_results = [[
+            "Error",
+            "Critical processing failure",
+            str(e),
+            "Unknown",
+            f"Batch processing failed: {str(e)}",
+            "N/A",
+            "N/A",
+            "N/A"
+        ]]
+        
+        error_csv_buffer = create_csv_for_download(error_results)
+        
+        # Debug: Ensure we're not returning None in error case
+        print(f"🔍 Debug Error: About to return error_results={type(error_results)}, error_csv_buffer={type(error_csv_buffer)}")
+        
+        return error_results, error_csv_buffer

@@ -133,38 +133,64 @@ def process_file_with_ui(uploaded_file: Any, address_type: str) -> Tuple[bool, O
         if not addresses:
             st.error("No addresses found in the uploaded file.")
             return False, None
-        
+            
         st.info(f"Found {len(addresses)} addresses to process")
         
-        # Create progress handlers
-        progress_callback, progress_messages = create_realtime_progress_handler()
-        
-        # Process addresses
-        st.markdown(f"### Processing {address_type.title()} Addresses")
-        
-        with st.spinner(f"Processing {address_type} addresses..."):
-            results, csv_buffer = process_addresses_batch(addresses, llm, primary_approved_use_list, secondary_approved_use_list, progress_callback)
-        
-        # Display success message
-        st.success(f"✅ Processing completed! Processed {len(results)} addresses.")
-        
-        # Create download button
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{address_type}_processed_{timestamp}.csv"
-        
-        st.download_button(
-            label=f"📥 Download {address_type.title()} Results",
-            data=csv_buffer.getvalue(),
-            file_name=filename,
-            mime="text/csv",
-            use_container_width=True
-        )
-        
-        return True, (results, csv_buffer)
-        
-    except Exception as e:
-        st.error(f"Error processing file: {str(e)}")
+    except Exception as csv_error:
+        st.error(f"❌ Error processing CSV file: {str(csv_error)}")
+        st.error("Please check that your file is a valid CSV with addresses in the first column.")
         return False, None
+        
+    # Create progress handlers
+    progress_callback, progress_messages = create_realtime_progress_handler()
+    
+    # Process addresses
+    st.markdown(f"### Processing {address_type.title()} Addresses")
+    
+    with st.spinner(f"Processing {address_type} addresses..."):
+            try:
+                print(f"🔍 UI Debug: About to call process_addresses_batch with {len(addresses)} addresses")
+                result = process_addresses_batch(addresses, llm, primary_approved_use_list, secondary_approved_use_list, progress_callback)
+                print(f"🔍 UI Debug: Got result of type: {type(result)}")
+                
+                # Debug: Check what we got back
+                if result is None:
+                    st.error("❌ Processing function returned None - this shouldn't happen!")
+                    print("❌ UI Debug: result is None!")
+                    return False, None
+                
+                if not isinstance(result, (tuple, list)) or len(result) != 2:
+                    st.error(f"❌ Processing function returned unexpected format: {type(result)}")
+                    print(f"❌ UI Debug: result format error - type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'no len'}")
+                    return False, None
+                
+                print(f"🔍 UI Debug: About to unpack result: {type(result)} with length {len(result)}")
+                results, csv_buffer = result
+                print(f"🔍 UI Debug: Successfully unpacked - results: {type(results)}, csv_buffer: {type(csv_buffer)}")
+                
+            except Exception as processing_error:
+                st.error(f"❌ Error during address processing: {str(processing_error)}")
+                print(f"❌ UI Debug: Exception caught: {str(processing_error)}")
+                import traceback
+                traceback.print_exc()
+                return False, None
+    
+    # Display success message
+    st.success(f"✅ Processing completed! Processed {len(results)} addresses.")
+    
+    # Create download button
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{address_type}_processed_{timestamp}.csv"
+    
+    st.download_button(
+        label=f"📥 Download {address_type.title()} Results",
+        data=csv_buffer.getvalue(),
+        file_name=filename,
+        mime="text/csv",
+        use_container_width=True
+    )
+    
+    return True, (results, csv_buffer)
 
 
 def display_chat_interface():
