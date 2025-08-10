@@ -4,6 +4,9 @@ Contains reusable UI functions and progress handling.
 """
 import streamlit as st
 import datetime
+import pytz
+import pandas as pd
+import io
 from typing import Tuple, Optional, Callable, List, Any
 from enforcement_engine import process_addresses_batch
 
@@ -54,7 +57,9 @@ def create_realtime_progress_handler() -> Tuple[Callable, List[str]]:
     
     def update_progress(message, current_index=None, total=None):
         """Update progress with real-time UI updates."""
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        # Use Singapore timezone for timestamps
+        sg_tz = pytz.timezone("Asia/Singapore")
+        timestamp = datetime.datetime.now(sg_tz).strftime("%H:%M:%S")
         formatted_message = f"[{timestamp}] {message}"
         
         # Always log to console
@@ -208,7 +213,8 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing"
     st.success(f"✅ Processing completed! Processed {len(results)} addresses.")
     
     # Create download button
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    sg_tz = pytz.timezone("Asia/Singapore")
+    timestamp = datetime.datetime.now(sg_tz).strftime("%Y%m%d_%H%M%S")
     filename = f"{address_type}_processed_{timestamp}.csv"
     
     st.download_button(
@@ -219,7 +225,275 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing"
         use_container_width=True
     )
     
+    # Display Overall Summary
+    display_results_summary(results, address_type)
+    
     return True, (results, csv_buffer)
+
+
+def generate_summary_pdf(results: List[List[str]], address_type: str) -> bytes:
+    """
+    Generate a PDF summary report of the processing results.
+    
+    Args:
+        results: List of processed address results
+        address_type: Type of addresses processed
+    
+    Returns:
+        PDF content as bytes
+    """
+    # Since reportlab is not available, use the text-based approach
+    return generate_text_summary_pdf(results, address_type)
+
+
+def generate_text_summary_pdf(results: List[List[str]], address_type: str) -> bytes:
+    """
+    Generate a simple text-based summary report.
+    """
+    buffer = io.StringIO()
+    
+    sg_tz = pytz.timezone("Asia/Singapore")
+    current_time = datetime.datetime.now(sg_tz).strftime("%Y-%m-%d %H:%M:%S SGT")
+    
+    buffer.write("ENFORCEMENT PROCESSING SUMMARY REPORT\n")
+    buffer.write("=" * 50 + "\n\n")
+    buffer.write(f"Report Generated: {current_time}\n")
+    buffer.write(f"Address Type: {address_type.title()}\n")
+    buffer.write(f"Total Addresses Processed: {len(results)}\n\n")
+    
+    if results:
+        columns = [
+            'Address', 'Confirmed Occupant', 'Verification Analysis', 'Primary Approved Use',
+            'Secondary Approved Use', 'Compliance Level', 'Rationale', 'Google Address Search',
+            'Google Address Search Variant', 'Occupant Google Search'
+        ]
+        df = pd.DataFrame(results, columns=columns)
+        
+        # Key Metrics
+        buffer.write("KEY METRICS\n")
+        buffer.write("-" * 20 + "\n")
+        
+        total_addresses = len(results)
+        successful_occupants = df[~df['Confirmed Occupant'].isin(['Need more information', 'Error'])].shape[0]
+        completed_assessments = df[~df['Compliance Level'].isin(['Need more information', 'Assessment failed', 'Error'])].shape[0]
+        error_count = df[df['Confirmed Occupant'] == 'Error'].shape[0]
+        
+        occupant_rate = (successful_occupants/total_addresses)*100 if total_addresses > 0 else 0
+        assessment_rate = (completed_assessments/total_addresses)*100 if total_addresses > 0 else 0
+        error_rate = (error_count/total_addresses)*100 if total_addresses > 0 else 0
+        
+        buffer.write(f"Occupant Successfully Identified: {successful_occupants}/{total_addresses} ({occupant_rate:.1f}%)\n")
+        buffer.write(f"Compliance Assessed: {completed_assessments}/{total_addresses} ({assessment_rate:.1f}%)\n")
+        buffer.write(f"Processing Errors: {error_count}/{total_addresses} ({error_rate:.1f}%)\n\n")
+        
+        # Compliance Distribution
+        buffer.write("COMPLIANCE LEVEL DISTRIBUTION\n")
+        buffer.write("-" * 30 + "\n")
+        
+        compliance_counts = df['Compliance Level'].value_counts()
+        for level, count in compliance_counts.items():
+            percentage = (count / total_addresses) * 100
+            buffer.write(f"{level}: {count} ({percentage:.1f}%)\n")
+        
+        buffer.write("\n")
+        
+        # Key Insights
+        buffer.write("KEY INSIGHTS\n")
+        buffer.write("-" * 15 + "\n")
+        
+        if not compliance_counts.empty:
+            most_common = compliance_counts.index[0]
+            most_common_count = compliance_counts.iloc[0]
+            buffer.write(f"• Most common compliance level: {most_common} ({most_common_count} addresses, {(most_common_count/total_addresses)*100:.1f}%)\n")
+        
+        unauthorized_count = compliance_counts.get('Unauthorised Use', 0) + compliance_counts.get('Likely Unauthorised Use', 0)
+        authorized_count = compliance_counts.get('Authorised Use', 0) + compliance_counts.get('Likely Authorised Use', 0)
+        
+        if unauthorized_count > 0 or authorized_count > 0:
+            buffer.write(f"• Potential compliance issues: {unauthorized_count} addresses ({(unauthorized_count/total_addresses)*100:.1f}%)\n")
+            buffer.write(f"• Compliant addresses: {authorized_count} addresses ({(authorized_count/total_addresses)*100:.1f}%)\n")
+        
+        need_info_count = df[df['Confirmed Occupant'] == 'Need more information'].shape[0]
+        if need_info_count > 0:
+            buffer.write(f"• Addresses needing additional information: {need_info_count} ({(need_info_count/total_addresses)*100:.1f}%)\n")
+        
+        buffer.write(f"\n")
+        buffer.write("=" * 50 + "\n")
+        buffer.write("End of Report\n")
+    
+    else:
+        buffer.write("No results to summarize.\n")
+    
+    # Convert string to bytes with proper encoding
+    text_content = buffer.getvalue()
+    buffer.close()
+    return text_content.encode('utf-8')
+
+
+def display_results_summary(results: List[List[str]], address_type: str):
+    """
+    Display overall summary of processing results with statistics and visualizations.
+    
+    Args:
+        results: List of processed address results
+        address_type: Type of addresses processed (shophouse/industrial)
+    """
+    # Section header
+    st.markdown("## 📊 Overall Summary")
+    
+    if not results:
+        st.warning("No results to summarize.")
+        return
+    
+    # Convert results to DataFrame for easier analysis
+    # Based on enforcement_engine.py, results structure is:
+    # [address, confirmed_occupant, verification_analysis, primary_approved_use, 
+    #  secondary_approved_use, compliance_level, rationale, google_address_search_results,
+    #  google_address_search_results_variant, confirmed_occupant_google_search_results]
+    
+    columns = [
+        'Address', 'Confirmed Occupant', 'Verification Analysis', 'Primary Approved Use',
+        'Secondary Approved Use', 'Compliance Level', 'Rationale', 'Google Address Search',
+        'Google Address Search Variant', 'Occupant Google Search'
+    ]
+    
+    df = pd.DataFrame(results, columns=columns)
+    
+    # Basic statistics
+    total_addresses = len(results)
+    
+    # Create metrics columns
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="📍 Total Addresses Processed",
+            value=total_addresses
+        )
+    
+    with col2:
+        # Count successful occupant identifications
+        successful_occupants = df[~df['Confirmed Occupant'].isin(['Need more information', 'Error'])].shape[0]
+        occupant_success_rate = (successful_occupants / total_addresses) * 100 if total_addresses > 0 else 0
+        st.metric(
+            label="✅ Occupant ID Success Rate",
+            value=f"{occupant_success_rate:.1f}%",
+            delta=f"{successful_occupants}/{total_addresses}"
+        )
+    
+    with col3:
+        # Count compliance assessments (not "Need more information" or "Assessment failed")
+        completed_assessments = df[~df['Compliance Level'].isin(['Need more information', 'Assessment failed', 'Error'])].shape[0]
+        assessment_rate = (completed_assessments / total_addresses) * 100 if total_addresses > 0 else 0
+        st.metric(
+            label="⚖️ Compliance Assessed",
+            value=f"{assessment_rate:.1f}%",
+            delta=f"{completed_assessments}/{total_addresses}"
+        )
+    
+    with col4:
+        # Processing errors
+        error_count = df[df['Confirmed Occupant'] == 'Error'].shape[0]
+        error_rate = (error_count / total_addresses) * 100 if total_addresses > 0 else 0
+        st.metric(
+            label="❌ Processing Errors",
+            value=f"{error_rate:.1f}%",
+            delta=f"{error_count}/{total_addresses}"
+        )
+    
+    # Compliance Level Distribution
+    st.markdown("### 🎯 Compliance Level Distribution")
+    
+    compliance_counts = df['Compliance Level'].value_counts()
+    
+    if not compliance_counts.empty:
+        # Create two columns for pie chart and table
+        chart_col, table_col = st.columns([2, 1])
+        
+        with chart_col:
+            # Create bar chart using Streamlit's built-in chart
+            st.subheader("Distribution Chart")
+            
+            # Create bar chart data
+            chart_data = compliance_counts.reset_index()
+            chart_data.columns = ['Compliance Level', 'Count']
+            
+            st.bar_chart(data=chart_data.set_index('Compliance Level'))
+        
+        with table_col:
+            st.subheader("Summary Table")
+            
+            # Create summary table with percentages
+            summary_df = pd.DataFrame({
+                'Compliance Level': compliance_counts.index,
+                'Count': compliance_counts.values,
+                'Percentage': (compliance_counts.values / total_addresses * 100).round(1)
+            })
+            
+            st.dataframe(
+                summary_df,
+                use_container_width=True,
+                hide_index=True
+            )
+    
+    # Additional insights
+    st.markdown("### 💡 Enforcement Insights")
+    
+    insights = []
+    
+    # Most common compliance level
+    if not compliance_counts.empty:
+        most_common = compliance_counts.index[0]
+        most_common_count = compliance_counts.iloc[0]
+        insights.append(f"🔸 Most common compliance level: **{most_common}** ({most_common_count} addresses, {(most_common_count/total_addresses)*100:.1f}%)")
+    
+    # Unauthorized vs Authorized breakdown
+    unauthorized_count = compliance_counts.get('Unauthorised Use', 0) + compliance_counts.get('Likely Unauthorised Use', 0)
+    authorized_count = compliance_counts.get('Authorised Use', 0) + compliance_counts.get('Likely Authorised Use', 0)
+    
+    if unauthorized_count > 0 or authorized_count > 0:
+        insights.append(f"🔸 Potential compliance issues: **{unauthorized_count}** addresses ({(unauthorized_count/total_addresses)*100:.1f}%)")
+        insights.append(f"🔸 Compliant addresses: **{authorized_count}** addresses ({(authorized_count/total_addresses)*100:.1f}%)")
+    
+    # Occupant identification insights
+    need_info_count = df[df['Confirmed Occupant'] == 'Need more information'].shape[0]
+    if need_info_count > 0:
+        insights.append(f"🔸 Addresses needing additional information: **{need_info_count}** ({(need_info_count/total_addresses)*100:.1f}%)")
+    
+    # Display insights
+    for insight in insights:
+        st.markdown(insight)
+    
+    # Address type confirmation
+    st.markdown(f"📋 **Address Type Processed:** {address_type.title()}")
+    
+    # Processing timestamp
+    sg_tz = pytz.timezone("Asia/Singapore")
+    current_time = datetime.datetime.now(sg_tz).strftime("%Y-%m-%d %H:%M:%S SGT")
+    st.markdown(f"🕒 **Summary Generated:** {current_time}")
+    
+    # PDF Download Button
+    st.markdown("### 📄 Download Summary Report")
+    
+    try:
+        # Generate text-based summary report
+        summary_content = generate_text_summary_pdf(results, address_type)
+        sg_tz = pytz.timezone("Asia/Singapore")
+        timestamp = datetime.datetime.now(sg_tz).strftime("%Y%m%d_%H%M%S")
+        txt_filename = f"{address_type}_summary_report_{timestamp}.txt"
+        
+        st.download_button(
+            label="📥 Download Summary Report",
+            data=summary_content,
+            file_name=txt_filename,
+            mime="text/plain",
+            use_container_width=True,
+            help="Download a comprehensive summary report of the processing results"
+        )
+        
+    except Exception as e:
+        st.error(f"Error generating summary report: {str(e)}")
+        st.info("Please try again or contact support if the issue persists.")
 
 
 def display_chat_interface():
