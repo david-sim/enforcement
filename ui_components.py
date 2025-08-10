@@ -534,13 +534,13 @@ def display_chat_interface():
 def display_sidebar():
     """Display the sidebar with application information and navigation."""
     with st.sidebar:
-        # Load and display sidebar image
+        # Load and display main icon with transparent background
         try:
             from PIL import Image
-            sidebar_image = Image.open("imgs/stsidebarimg.png")
-            st.image(sidebar_image, use_container_width=True)
+            main_icon = Image.open("imgs/icon_transparent.png")
+            st.image(main_icon, use_container_width=True)
         except:
-            st.info("Sidebar image not found")
+            st.info("Main icon not found")
         
         st.markdown("---")
         
@@ -569,28 +569,24 @@ def display_sidebar():
         
         st.markdown("---")
         
-        # Application info
-        st.markdown("### ⚖️ Enforcement Tool")
-        st.markdown("""
-        AI-powered address processing and compliance detection system.
-        
-        **Features:**
-        - Occupant identification
-        - Compliance assessment  
-        - Batch processing
-        - Detailed reporting
-        """)
-        
-        st.markdown("---")
-        
         # Quick stats or info
         st.markdown("### 📊 Quick Info")
         st.info("💡 Upload CSV files with addresses to get started")
-        st.success("🤖 Powered by AI for accurate results")
+        st.success("🤖 AI-assisted for accurate results")
         
         st.markdown("---")
         st.markdown("**Enforcement Processing Tool**")
         st.markdown("Upload CSV files to process addresses for compliance assessment.")
+        
+        
+        # Powered By label and Streamlit sidebar image
+        st.markdown("---")
+        st.markdown("**Powered By**")
+        try:
+            sidebar_image = Image.open("imgs/stsidebarimg.png")
+            st.image(sidebar_image, use_container_width=True)
+        except:
+            st.info("Sidebar image not found")
 
 
 def setup_page_config():

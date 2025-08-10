@@ -3,6 +3,7 @@ Methodology page for the Enforcement Processing Tool.
 Contains detailed methodology, technology stack, and benefits information.
 """
 import streamlit as st
+from PIL import Image
 
 
 def display_methodology_page():
@@ -48,6 +49,14 @@ def display_methodology_page():
            - Generate downloadable reports and summaries
            - Provide actionable compliance insights
         """)
+        
+        # Add workflow flowchart illustration
+        st.markdown("### 📊 Process Flow Illustration")
+        try:
+            flowchart_image = Image.open("imgs/process_flowchart_white.png")
+            st.image(flowchart_image, caption="Enforcement Processing Workflow", use_container_width=True)
+        except:
+            st.warning("Process flowchart image not found")
     
     # Technology Stack Section
     st.markdown("## 💻 Technology Stack")
