@@ -20,18 +20,20 @@ def display_file_upload_section() -> Tuple[Optional[Any], str]:
     """
     st.markdown("### Upload your file and then select the address type")
     
-    # File uploader
+    # File uploader with static key
     uploaded_file = st.file_uploader(
         "Choose a file",
         type=['csv'],
-        help="Upload your file containing addresses"
+        help="Upload your file containing addresses",
+        key="csv_file_uploader"
     )
     
-    # Address type selector
+    # Address type selector with static key
     address_type = st.selectbox(
         "Select the address type",
         options=["", "shophouse", "industrial"],
-        help="Choose the type of addresses in your file"
+        help="Choose the type of addresses in your file",
+        key="address_type_selector"
     )
     
     # Display selected information
@@ -530,7 +532,7 @@ def display_chat_interface():
 
 
 def display_sidebar():
-    """Display the sidebar with application information."""
+    """Display the sidebar with application information and navigation."""
     with st.sidebar:
         # Load and display sidebar image
         try:
@@ -539,6 +541,52 @@ def display_sidebar():
             st.image(sidebar_image, use_container_width=True)
         except:
             st.info("Sidebar image not found")
+        
+        st.markdown("---")
+        
+        # Navigation using radio buttons (Streamlit best practice)
+        st.markdown("### 🧭 Navigation")
+        
+        # Initialize session state for page navigation
+        if 'current_page' not in st.session_state:
+            st.session_state.current_page = 'Main'
+        
+        # Radio button navigation
+        page_options = ['Main', 'About Us', 'Methodology']
+        current_index = page_options.index(st.session_state.current_page)
+        
+        selected_page = st.radio(
+            "Select Page:",
+            options=page_options,
+            index=current_index,
+            key="page_navigation_radio_unique"
+        )
+        
+        # Update session state if page changed
+        if selected_page != st.session_state.current_page:
+            st.session_state.current_page = selected_page
+            st.rerun()
+        
+        st.markdown("---")
+        
+        # Application info
+        st.markdown("### ⚖️ Enforcement Tool")
+        st.markdown("""
+        AI-powered address processing and compliance detection system.
+        
+        **Features:**
+        - Occupant identification
+        - Compliance assessment  
+        - Batch processing
+        - Detailed reporting
+        """)
+        
+        st.markdown("---")
+        
+        # Quick stats or info
+        st.markdown("### 📊 Quick Info")
+        st.info("💡 Upload CSV files with addresses to get started")
+        st.success("🤖 Powered by AI for accurate results")
         
         st.markdown("---")
         st.markdown("**Enforcement Processing Tool**")
