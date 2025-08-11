@@ -515,6 +515,80 @@ def generate_text_summary_pdf(results: List[List[str]], address_type: str) -> by
     return text_content.encode('utf-8')
 
 
+def display_single_record_details(record_data: List[str], address_type: str):
+    """
+    Display detailed results for a single record in an easy-to-read format.
+    
+    Args:
+        record_data: Single record result list
+        address_type: Type of address processed
+    """
+    st.markdown("### 🏠 Record Details")
+    
+    # Parse the record data based on the expected format
+    # Expected format: [address, confirmed_occupant, verification_analysis, 
+    #                  primary_approved_use, secondary_approved_use, compliance_level, 
+    #                  rationale, google_address_search_results, 
+    #                  google_address_search_results_variant, confirmed_occupant_google_search_results]
+    
+    if len(record_data) >= 10:
+        address = record_data[0]
+        confirmed_occupant = record_data[1]
+        verification_analysis = record_data[2]
+        primary_approved_use = record_data[3]
+        secondary_approved_use = record_data[4]
+        compliance_level = record_data[5]
+        rationale = record_data[6]
+        google_address_search = record_data[7]
+        google_address_variant = record_data[8]
+        occupant_google_search = record_data[9]
+        
+        # Create two columns for better layout
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.markdown("#### 📍 Address Information")
+            st.info(f"**Address:** {address}")
+            
+            if primary_approved_use and primary_approved_use.strip():
+                st.info(f"**Primary Approved Use:** {primary_approved_use}")
+            
+            if secondary_approved_use and secondary_approved_use.strip():
+                st.info(f"**Secondary Approved Use:** {secondary_approved_use}")
+        
+        with col2:
+            st.markdown("#### 🔍 Occupant Information")
+            st.info(f"**Identified Occupant:** {confirmed_occupant}")
+            
+            # Verification Analysis
+            if verification_analysis and verification_analysis.strip() and verification_analysis.lower() != 'n/a':
+                with st.expander("🔬 Verification Analysis", expanded=True):
+                    st.write(verification_analysis)
+        
+        # Compliance Assessment section (full width, before rationale)
+        st.markdown("#### ⚖️ Compliance Assessment")
+        if compliance_level.lower() in ['compliant', 'low risk']:
+            st.success(f"**Status:** {compliance_level}")
+        elif compliance_level.lower() in ['medium risk', 'moderate']:
+            st.warning(f"**Status:** {compliance_level}")
+        elif compliance_level.lower() in ['high risk', 'non-compliant']:
+            st.error(f"**Status:** {compliance_level}")
+        else:
+            st.info(f"**Status:** {compliance_level}")
+        
+        # Rationale section (full width)
+        if rationale and rationale.strip() and rationale.lower() != 'n/a':
+            st.markdown("#### 📝 Analysis Rationale")
+            with st.expander("View Detailed Rationale", expanded=True):
+                st.write(rationale)
+    
+    else:
+        st.error("⚠️ Record data format is incomplete. Please check the processing results.")
+        st.write(f"Expected 10 fields, got {len(record_data)} fields")
+        if record_data:
+            st.write("Available data:", record_data)
+
+
 def display_persistent_results(result_data: Tuple, address_type: str):
     """
     Display persistent results that survive page reruns.
@@ -530,6 +604,10 @@ def display_persistent_results(result_data: Tuple, address_type: str):
     
     st.markdown("## 📋 Processing Results")
     st.success(f"✅ Processing completed successfully! Processed {len(results)} record(s).")
+    
+    # For single records, display detailed results immediately
+    if len(results) == 1:
+        display_single_record_details(results[0], address_type)
     
     # Download buttons section
     st.markdown("### 📥 Downloads")
