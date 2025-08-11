@@ -1,53 +1,124 @@
-Enforcement Bot is an AI Assistant that was designed to track addresses. It acts as an AI-infused sidekick, offering on-the-fly assistance 🚀, google snippets ✂️, and a deep dive into Occupant Identification and Compliance Check. 🧪
+# ⚖️ Enforcement Processing Tool
 
-## Dynamic Features:
+An AI-powered enforcement processing system that analyzes addresses for compliance checking and occupant identification. The tool provides comprehensive automated analysis with both bulk processing capabilities and interactive single-record entry options.
 
-- Interactive Chat Interface 💬: Engage in a check with Enforcement Bot, check for addresses. The assistant is equipped to understand addresses and respond with occupant information, making the assessment both comprehensive and detailed.
+## 🚀 Key Features
 
-- Google Snippet Wizardry 🧙‍♂️: Enforcement conjures up ready-to-use google snippets for common Streamlit scenarios. This magic is especially handy for beginners who are getting to grips with Streamlit and seasoned pros looking to expedite their code-writing spells.
+### 📊 Dual Processing Modes
+- **CSV Bulk Processing**: Upload CSV files containing multiple addresses for batch analysis
+- **Single Record Entry**: Manually enter individual addresses for quick analysis
+- **Smart Input Validation**: Real-time form validation and user guidance
 
-## Insightful Logic and Capabilities:
+### 🤖 AI-Powered Analysis
+- **Occupant Identification**: Automated detection of current occupants using advanced AI
+- **Compliance Assessment**: Comprehensive evaluation against approved use regulations  
+- **Google Search Integration**: Real-time web searches for address verification
+- **Enforcement Priority Scoring**: Intelligent prioritization of enforcement actions
 
-The Enforcement Bot lies a sophisticated AI engine 🤖, trained on a plethora of data, including the vast expanses of addresses. This training enables the assistant to understand addresses, maintain conversational analysis, and provide accurate, context-aware occupant identification.
+### 💬 Interactive Chat Interface
+- **Conversational AI**: Engage with the enforcement assistant for guidance and support
+- **Context-Aware Responses**: AI maintains conversation history for coherent interactions
+- **Real-Time Assistance**: Get help with processing questions and technical issues
 
-Enforcement's backend is a creative use of session state management, providing the Bot with a memory, making for a consistent and coherent conversation for all your verification assistances 🧠.
+### 📋 Comprehensive Reporting
+- **Detailed Results**: Complete analysis with rationale and recommendations
+- **CSV Export**: Download results in structured CSV format
+- **PDF Summary Reports**: Generate comprehensive summary reports
+- **Visual Analytics**: Charts and statistics for processed data
+- **Persistent Results**: Results remain visible for multiple downloads until inputs change
 
-## Setup Instructions
+### 🔧 Advanced Features
+- **Session State Management**: Smart handling of user data and results persistence
+- **Progress Tracking**: Real-time processing updates with detailed logs
+- **Error Handling**: Robust error management with user-friendly feedback
+- **Multi-Page Navigation**: Clean interface with About and Methodology sections
 
-To get Enforcement up and running on your local machine, follow these steps:
+## 🏗️ System Requirements
 
-### Prerequisites
+- **Python**: 3.10 or higher
+- **Dependencies**: All required packages listed in `requirements.txt`
+- **API Access**: OpenAI API key required for AI processing
 
-- Python 3.10 or higher
-- Pip package manager
+## ⚙️ Setup Instructions
 
-### API Keys
+### 1. API Configuration
+Configure your OpenAI API key using one of these methods:
+- **Streamlit Secrets**: Add to `secrets.toml`
+  ```toml
+  OPENAI_API_KEY = "your-api-key-here"
+  ```
+- **Environment Variable**: 
+  ```bash
+  export OPENAI_API_KEY="your-api-key-here"
+  ```
 
-Use secrets.toml an add your OpenAI API key or set your enviroment variable OPENAI_API_KEY to your API key.
+### 2. Installation
+```bash
+# Install dependencies
+pip install -r requirements.txt
+```
 
-### Running the Application
-
-To run Enforcement, execute the following command:
-
+### 3. Running the Application
 ```bash
 streamlit run streamlit_main.py
 ```
 
-This will start the Streamlit server, and you should see output indicating the local URL where the app is being served, typically `http://localhost:8501`.
+The application will be available at `http://localhost:8501`
 
-**Note**: The application has been restructured for better maintainability. If you encounter the legacy `streamlit_app.py`, it will redirect you to use the new modular structure.
+## 📖 Usage Guide
 
-## Using Enforcement
+### Bulk CSV Processing
+1. Select "Upload CSV file" option
+2. Upload your CSV file with address data
+3. Choose address type (shophouse/industrial)  
+4. Click "🚀 Start Processing CSV File"
+5. Monitor real-time progress and download results
 
-After launching Enforcement, you can interact with it in the following ways:
+**Expected CSV Format:**
+```
+Column 1: Address (Required) - Complete address with postal code
+Column 2: Primary Approved Use (Optional) - e.g., "Shophouse", "Industrial"
+Column 3: Secondary Approved Use (Optional) - e.g., "Retail", "Manufacturing"
+```
 
-- **Chat Interface**: Simply upload your address csv file and type your address-related queries into the chat interface and hit send. Streamly will respond with insights, google snippets, and analysis based on your addresses.
+### Single Record Entry
+1. Select "Enter single record manually" option
+2. Fill in the form fields:
+   - **Address** (Required): Complete address including unit and postal code
+   - **Primary Approved Use** (Optional): Primary use designation
+   - **Secondary Approved Use** (Optional): Secondary use designation
+3. Click "Validate Entry" to confirm input
+4. Select address type (shophouse/industrial)
+5. Click "🚀 Process Single Record"
 
-- **Google Snippets**: Display Google Snippets based on the address search to look at relevant clues for the address resolution. 
+### Interactive Chat
+- Navigate to the chat interface in the sidebar
+- Ask questions about processing, results, or general assistance
+- The AI maintains conversation context for better interactions
 
-Remember to check the sidebar for additional information.
+## 📊 Output Features
 
+### Results Display
+- **Persistent Results**: Results remain visible after downloads
+- **Smart Clearing**: Results only clear when inputs change
+- **Multiple Downloads**: Download CSV and PDF reports multiple times
+- **Visual Analytics**: Charts showing compliance statistics and trends
 
-## License
+### Report Types
+- **CSV Results**: Structured data with all analysis details
+- **TXT Summary**: Comprehensive report with statistics and insights
+- **Real-time Logs**: Processing progress and detailed execution logs
 
-Streamly is released under the [MIT License](LICENSE). See the `LICENSE` file for more details.
+## 🏛️ Architecture
+
+The application follows a modular architecture:
+- `streamlit_main.py`: Main application entry point
+- `ui_components.py`: UI utilities and Streamlit components  
+- `enforcement_engine.py`: Core processing logic
+- `csv_processor.py`: CSV handling and validation
+- `search_service.py`: Google search integration
+- Page modules: `about_page.py`, `methodology_page.py`
+
+## 🔒 License
+
+Released under the [MIT License](LICENSE). See the `LICENSE` file for details.

@@ -10,6 +10,8 @@ from ui_components import (
     display_sidebar, 
     display_file_upload_section, 
     process_file_with_ui,
+    process_single_record_with_ui,
+    display_persistent_results,
     display_chat_interface
 )
 from about_page import display_about_page
@@ -24,24 +26,79 @@ def display_main_page():
     st.title("⚖️ Enforcement Processing Tool")
     
     st.markdown("""
-    Welcome to the AI-powered enforcement processing system. Upload your CSV file 
-    containing addresses and approved use information to begin automated processing.
+    Welcome to the AI-powered enforcement processing system. You can either upload a CSV file 
+    for bulk processing or enter a single record manually for quick analysis.
     """)
     
-    # File upload and processing section
-    uploaded_file, address_type = display_file_upload_section()
+    # Initialize session state for persistent results
+    if 'processing_results' not in st.session_state:
+        st.session_state.processing_results = None
+    if 'last_processed_inputs' not in st.session_state:
+        st.session_state.last_processed_inputs = None
     
-    # Process file if both file and address type are provided
+    # File upload and processing section (now includes manual entry option)
+    uploaded_file, address_type, single_record_data = display_file_upload_section()
+    
+    # Create current input signature for change detection
+    current_inputs = {
+        'file_name': uploaded_file.name if uploaded_file else None,
+        'file_size': uploaded_file.size if uploaded_file else None,
+        'address_type': address_type,
+        'single_record': single_record_data
+    }
+    
+    # Check if inputs have changed (clear results if they have)
+    if st.session_state.last_processed_inputs != current_inputs:
+        if st.session_state.last_processed_inputs is not None:  # Don't clear on first load
+            st.session_state.processing_results = None
+            # st.info("🔄 Input changed - previous results cleared")
+    
+    # Determine processing mode and validate inputs
+    processing_ready = False
+    processing_mode = None
+    
     if uploaded_file is not None and address_type:
-        if st.button("🚀 Start Processing", type="primary", use_container_width=True, 
-                    key="start_processing_button"):
-            with st.spinner("Processing addresses..."):
-                success, result_data = process_file_with_ui(uploaded_file, address_type)
+        processing_ready = True
+        processing_mode = "file"
+    elif single_record_data is not None and address_type:
+        processing_ready = True
+        processing_mode = "single"
+    
+    # Show processing button if ready
+    if processing_ready:
+        if processing_mode == "file":
+            button_label = "🚀 Start Processing CSV File"
+            button_help = f"Process {uploaded_file.name} with {address_type} address type"
+        else:
+            button_label = "🚀 Process Single Record"
+            button_help = f"Process the entered address as {address_type} type"
+        
+        if st.button(button_label, type="primary", use_container_width=True, 
+                    help=button_help, key="start_processing_button"):
+            with st.spinner("Processing..."):
+                if processing_mode == "file":
+                    success, result_data = process_file_with_ui(uploaded_file, address_type)
+                else:
+                    success, result_data = process_single_record_with_ui(single_record_data, address_type)
                 
                 if success:
+                    # Store results in session state
+                    st.session_state.processing_results = result_data
+                    st.session_state.last_processed_inputs = current_inputs
                     st.balloons()
                 else:
-                    st.error("Processing failed. Please check your file and try again.")
+                    st.error("Processing failed. Please check your input and try again.")
+    else:
+        # Show help text for what's needed
+        if not address_type:
+            st.info("👆 Please select an address type to continue")
+        elif uploaded_file is None and single_record_data is None:
+            st.info("👆 Please either upload a CSV file or enter a single record manually to continue")
+    
+    # Display persistent results if available
+    if st.session_state.processing_results is not None:
+        st.markdown("---")
+        display_persistent_results(st.session_state.processing_results, address_type)
 
 def main():
     """Main application entry point."""

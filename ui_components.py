@@ -11,43 +11,171 @@ from typing import Tuple, Optional, Callable, List, Any
 from enforcement_engine import process_addresses_batch
 
 
-def display_file_upload_section() -> Tuple[Optional[Any], str]:
+def display_file_upload_section() -> Tuple[Optional[Any], str, Optional[dict]]:
     """
-    Display the file upload section with validation.
+    Display the file upload section with validation and manual entry option.
+    Address type is selected first to enable future form customization.
     
     Returns:
-        Tuple of (uploaded_file, address_type)
+        Tuple of (uploaded_file, address_type, single_record_data)
     """
-    st.markdown("### Upload your file and then select the address type")
+    st.markdown("### Step 1: Select Address Type")
     
-    # File uploader with static key
-    uploaded_file = st.file_uploader(
-        "Choose a file",
-        type=['csv'],
-        help="Upload your file containing addresses",
-        key="csv_file_uploader"
-    )
-    
-    # Address type selector with static key
+    # Address type selector (moved to top for future customization)
     address_type = st.selectbox(
-        "Select the address type",
+        "Choose the type of address you're processing",
         options=["", "shophouse", "industrial"],
-        help="Choose the type of addresses in your file",
+        help="Select address type first - this may customize the form fields below",
         key="address_type_selector"
     )
     
-    # Display selected information
-    if uploaded_file is not None:
-        st.success(f"File uploaded: {uploaded_file.name}")
-        
-        # Validate file size (optional)
-        if uploaded_file.size > 10 * 1024 * 1024:  # 10MB limit
-            st.warning("⚠️ File is large. Processing may take longer.")
-    
     if address_type:
-        st.info(f"Selected address type: {address_type}")
+        st.success(f"✅ Selected address type: **{address_type.title()}**")
+        
+        # Future customization point: different logic based on address_type
+        # if address_type == "shophouse":
+        #     # Shophouse-specific form customization
+        # elif address_type == "industrial":
+        #     # Industrial-specific form customization
+    else:
+        st.info("👆 Please select an address type to continue")
+        return None, "", None
     
-    return uploaded_file, address_type
+    st.markdown("### Step 2: Choose Input Method")
+    
+    # Input method selector
+    input_method = st.radio(
+        "How would you like to provide your data?",
+        options=["Upload CSV file", "Enter single record manually"],
+        help="Choose between bulk processing with CSV or entering one record manually",
+        key="input_method_selector"
+    )
+    
+    # Clear validated record if switching input methods or address types
+    if 'previous_input_method' not in st.session_state:
+        st.session_state.previous_input_method = input_method
+        st.session_state.previous_address_type = address_type
+    elif (st.session_state.previous_input_method != input_method or 
+          st.session_state.get('previous_address_type') != address_type):
+        st.session_state.validated_single_record = None
+        st.session_state.previous_input_method = input_method
+        st.session_state.previous_address_type = address_type
+    
+    uploaded_file = None
+    single_record_data = None
+    
+    # Initialize session state for single record data
+    if 'validated_single_record' not in st.session_state:
+        st.session_state.validated_single_record = None
+    
+    if input_method == "Upload CSV file":
+        st.markdown(f"#### 📁 Upload CSV File for {address_type.title()} Addresses")
+        
+        # Address-type-specific CSV format guidance
+        with st.expander("📋 Expected CSV Format", expanded=False):
+            st.markdown("**Required Columns:**")
+            if address_type == "shophouse":
+                st.code("""
+Column 1: Address (Required) - e.g., "123 Smith Street #02-01 Singapore 123456"
+Column 2: Primary Approved Use (Optional) - e.g., "Shophouse", "Commercial"  
+Column 3: Secondary Approved Use (Optional) - e.g., "Retail", "Food & Beverage"
+                """)
+            else:  # industrial
+                st.code("""
+Column 1: Address (Required) - e.g., "1 Industrial Park Road Singapore 123456"
+Column 2: Primary Approved Use (Optional) - e.g., "Industrial", "Warehouse"
+Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
+                """)
+        
+        # File uploader with static key
+        uploaded_file = st.file_uploader(
+            "Choose a CSV file",
+            type=['csv'],
+            help=f"Upload your CSV file containing {address_type} addresses",
+            key="csv_file_uploader"
+        )
+        
+        # Display selected information
+        if uploaded_file is not None:
+            st.success(f"File uploaded: {uploaded_file.name}")
+            
+            # Validate file size (optional)
+            if uploaded_file.size > 10 * 1024 * 1024:  # 10MB limit
+                st.warning("⚠️ File is large. Processing may take longer.")
+    
+    else:  # Manual entry
+        st.markdown(f"#### ✍️ Enter Single {address_type.title()} Record")
+        
+        # Manual entry form with address-type-specific examples
+        with st.form("manual_entry_form"):
+            # Address-type-specific placeholder and help text
+            if address_type == "shophouse":
+                address_placeholder = "e.g., 123 Smith Street #02-01 Singapore 123456"
+                address_help = "Enter the complete shophouse address including unit number and postal code"
+                primary_placeholder = "e.g., Shophouse, Commercial"
+                secondary_placeholder = "e.g., Retail, Food & Beverage"
+            else:  # industrial
+                address_placeholder = "e.g., 1 Industrial Park Road Singapore 123456"
+                address_help = "Enter the complete industrial address including unit number and postal code"  
+                primary_placeholder = "e.g., Industrial, Warehouse"
+                secondary_placeholder = "e.g., Manufacturing, Storage"
+            
+            address = st.text_input(
+                "Address *",
+                placeholder=address_placeholder,
+                help=address_help,
+                key="manual_address"
+            )
+            
+            primary_approved_use = st.text_input(
+                "Primary Approved Use",
+                placeholder=primary_placeholder,
+                help="Enter the primary approved use (optional)",
+                key="manual_primary_use"
+            )
+            
+            secondary_approved_use = st.text_input(
+                "Secondary Approved Use", 
+                placeholder=secondary_placeholder,
+                help="Enter the secondary approved use (optional)",
+                key="manual_secondary_use"
+            )
+            
+            submitted = st.form_submit_button("Validate Entry", type="secondary")
+            
+            if submitted:
+                if address.strip():
+                    single_record_data = {
+                        "address": address.strip(),
+                        "primary_approved_use": primary_approved_use.strip() if primary_approved_use.strip() else None,
+                        "secondary_approved_use": secondary_approved_use.strip() if secondary_approved_use.strip() else None
+                    }
+                    # Store validated data in session state
+                    st.session_state.validated_single_record = single_record_data
+                    st.success("✅ Record validated successfully!")
+                    st.info(f"Address: {address}")
+                    if primary_approved_use.strip():
+                        st.info(f"Primary Use: {primary_approved_use}")
+                    if secondary_approved_use.strip():
+                        st.info(f"Secondary Use: {secondary_approved_use}")
+                else:
+                    st.error("❌ Address is required!")
+                    st.session_state.validated_single_record = None
+        
+        # Use session state data if available
+        if st.session_state.validated_single_record is not None:
+            single_record_data = st.session_state.validated_single_record
+    
+    # Debug information (temporary)
+    with st.expander("Debug Info (click to expand)"):
+        st.write(f"Address type: {address_type}")
+        st.write(f"Input method: {input_method}")
+        st.write(f"Uploaded file: {uploaded_file is not None}")
+        st.write(f"Single record data: {single_record_data is not None}")
+        if single_record_data:
+            st.write(f"Record details: {single_record_data}")
+    
+    return uploaded_file, address_type, single_record_data
 
 
 def create_realtime_progress_handler() -> Tuple[Callable, List[str]]:
@@ -212,25 +340,80 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing"
                 return False, None
     
     # Display success message
+    # Processing completed successfully
     st.success(f"✅ Processing completed! Processed {len(results)} addresses.")
     
-    # Create download button
-    sg_tz = pytz.timezone("Asia/Singapore")
-    timestamp = datetime.datetime.now(sg_tz).strftime("%Y%m%d_%H%M%S")
-    filename = f"{address_type}_processed_{timestamp}.csv"
-    
-    st.download_button(
-        label=f"📥 Download {address_type.title()} Results",
-        data=csv_buffer.getvalue(),
-        file_name=filename,
-        mime="text/csv",
-        use_container_width=True
-    )
-    
-    # Display Overall Summary
-    display_results_summary(results, address_type)
-    
     return True, (results, csv_buffer)
+
+
+def process_single_record_with_ui(single_record_data: dict, address_type: str) -> Tuple[bool, Optional[Any]]:
+    """
+    Process a single manually entered record with real-time UI updates.
+    
+    Args:
+        single_record_data: Dictionary containing address, primary_approved_use, secondary_approved_use
+        address_type: Selected address type
+    
+    Returns:
+        Success status and results
+    """
+    # Initialize LLM
+    llm = initialize_llm()
+    if llm is None:
+        return False, None
+    
+    # Prepare data for processing
+    addresses = [single_record_data["address"]]
+    primary_approved_use_list = [single_record_data.get("primary_approved_use")] if single_record_data.get("primary_approved_use") else [None]
+    secondary_approved_use_list = [single_record_data.get("secondary_approved_use")] if single_record_data.get("secondary_approved_use") else [None]
+    
+    st.success(f"✅ Processing single {address_type} address")
+    
+    # Create progress handlers
+    progress_callback, progress_messages = create_realtime_progress_handler()
+    
+    # Process the single address
+    st.markdown(f"### Processing {address_type.title()} Address")
+    
+    with st.spinner(f"Processing {address_type} address..."):
+        try:
+            print(f"🔍 UI Debug: About to call process_addresses_batch with 1 address")
+            result = process_addresses_batch(addresses, llm, primary_approved_use_list, secondary_approved_use_list, address_type, progress_callback)
+            print(f"🔍 UI Debug: Got result of type: {type(result)}")
+            
+            # Debug: Check what we got back
+            if result is None:
+                st.error("❌ Processing function returned None - this shouldn't happen!")
+                print("❌ UI Debug: result is None!")
+                return False, None
+            
+            if not isinstance(result, (tuple, list)) or len(result) != 2:
+                st.error(f"❌ Processing function returned unexpected format: {type(result)}")
+                print(f"❌ UI Debug: result format error - type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'no len'}")
+                return False, None
+            
+            # Correct unpacking: process_addresses_batch returns (results_list, csv_buffer)
+            results, csv_buffer = result
+            print(f"🔍 UI Debug: results type={type(results)}, csv_buffer type={type(csv_buffer)}")
+            
+            if not results:
+                st.warning("⚠️ Processing completed but no results returned")
+                print("⚠️ UI Debug: No results returned")
+                return False, None
+            
+            print(f"🔍 UI Debug: Results length: {len(results)}")
+            
+            # Processing completed successfully 
+            st.success(f"✅ Successfully processed 1 address!")
+            
+            return True, (results, csv_buffer)
+            
+        except Exception as e:
+            st.error(f"❌ Error during processing: {str(e)}")
+            print(f"❌ UI Debug: Exception during processing: {str(e)}")
+            import traceback
+            print(f"❌ UI Debug: Full traceback: {traceback.format_exc()}")
+            return False, None
 
 
 def generate_summary_pdf(results: List[List[str]], address_type: str) -> bytes:
@@ -330,6 +513,63 @@ def generate_text_summary_pdf(results: List[List[str]], address_type: str) -> by
     text_content = buffer.getvalue()
     buffer.close()
     return text_content.encode('utf-8')
+
+
+def display_persistent_results(result_data: Tuple, address_type: str):
+    """
+    Display persistent results that survive page reruns.
+    
+    Args:
+        result_data: Tuple containing (results, csv_buffer) 
+        address_type: Type of addresses processed
+    """
+    if result_data is None:
+        return
+        
+    results, csv_buffer = result_data
+    
+    st.markdown("## 📋 Processing Results")
+    st.success(f"✅ Processing completed successfully! Processed {len(results)} record(s).")
+    
+    # Download buttons section
+    st.markdown("### 📥 Downloads")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Generate timestamp for filename
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{address_type}_results_{timestamp}.csv"
+        
+        # CSV download button
+        st.download_button(
+            label=f"📥 Download {address_type.title()} Results",
+            data=csv_buffer.getvalue(),
+            file_name=filename,
+            mime="text/csv",
+            use_container_width=True,
+            key=f"download_csv_{timestamp}"  # Unique key to prevent widget conflicts
+        )
+    
+    with col2:
+        # Generate PDF summary report
+        try:
+            pdf_buffer = generate_summary_pdf(results, address_type)
+            pdf_filename = f"{address_type}_summary_report_{timestamp}.pdf"
+            
+            st.download_button(
+                label=f"📑 Download Summary Report",
+                data=pdf_buffer,
+                file_name=pdf_filename,
+                mime="application/pdf",
+                use_container_width=True,
+                key=f"download_pdf_{timestamp}"  # Unique key to prevent widget conflicts
+            )
+        except Exception as e:
+            st.warning(f"PDF generation unavailable: {str(e)}")
+    
+    # Display results summary
+    display_results_summary(results, address_type)
 
 
 def display_results_summary(results: List[List[str]], address_type: str):
@@ -473,29 +713,6 @@ def display_results_summary(results: List[List[str]], address_type: str):
     sg_tz = pytz.timezone("Asia/Singapore")
     current_time = datetime.datetime.now(sg_tz).strftime("%Y-%m-%d %H:%M:%S SGT")
     st.markdown(f"🕒 **Summary Generated:** {current_time}")
-    
-    # PDF Download Button
-    st.markdown("### 📄 Download Summary Report")
-    
-    try:
-        # Generate text-based summary report
-        summary_content = generate_text_summary_pdf(results, address_type)
-        sg_tz = pytz.timezone("Asia/Singapore")
-        timestamp = datetime.datetime.now(sg_tz).strftime("%Y%m%d_%H%M%S")
-        txt_filename = f"{address_type}_summary_report_{timestamp}.txt"
-        
-        st.download_button(
-            label="📥 Download Summary Report",
-            data=summary_content,
-            file_name=txt_filename,
-            mime="text/plain",
-            use_container_width=True,
-            help="Download a comprehensive summary report of the processing results"
-        )
-        
-    except Exception as e:
-        st.error(f"Error generating summary report: {str(e)}")
-        st.info("Please try again or contact support if the issue persists.")
 
 
 def display_chat_interface():
