@@ -542,27 +542,23 @@ def display_single_record_details(record_data: List[str], address_type: str):
         google_address_variant = record_data[8]
         occupant_google_search = record_data[9]
         
-        # Create two columns for better layout
-        col1, col2 = st.columns([1, 1])
+        # Single column layout with address information first, then occupant information
+        st.markdown("#### 📍 Address Information")
+        st.info(f"**Address:** {address}")
         
-        with col1:
-            st.markdown("#### 📍 Address Information")
-            st.info(f"**Address:** {address}")
-            
-            if primary_approved_use and primary_approved_use.strip():
-                st.info(f"**Primary Approved Use:** {primary_approved_use}")
-            
-            if secondary_approved_use and secondary_approved_use.strip():
-                st.info(f"**Secondary Approved Use:** {secondary_approved_use}")
+        if primary_approved_use and primary_approved_use.strip():
+            st.info(f"**Primary Approved Use:** {primary_approved_use}")
         
-        with col2:
-            st.markdown("#### 🔍 Occupant Information")
-            st.info(f"**Identified Occupant:** {confirmed_occupant}")
-            
-            # Verification Analysis
-            if verification_analysis and verification_analysis.strip() and verification_analysis.lower() != 'n/a':
-                with st.expander("🔬 Verification Analysis", expanded=True):
-                    st.write(verification_analysis)
+        if secondary_approved_use and secondary_approved_use.strip():
+            st.info(f"**Secondary Approved Use:** {secondary_approved_use}")
+        
+        st.markdown("#### 🔍 Occupant Information")
+        st.info(f"**Identified Occupant:** {confirmed_occupant}")
+        
+        # Verification Analysis
+        if verification_analysis and verification_analysis.strip() and verification_analysis.lower() != 'n/a':
+            with st.expander("🔬 Verification Analysis", expanded=True):
+                st.write(verification_analysis)
         
         # Compliance Assessment section (full width, before rationale)
         st.markdown("#### ⚖️ Compliance Assessment")

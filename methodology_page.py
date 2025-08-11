@@ -54,7 +54,7 @@ def display_methodology_page():
         st.markdown("### 📊 Process Flow Illustration")
         try:
             flowchart_image = Image.open("imgs/process_flowchart_white.png")
-            st.image(flowchart_image, caption="Enforcement Processing Workflow", use_container_width=True)
+            st.image(flowchart_image, caption="Enforcement Processing Workflow", width=600)
         except:
             st.warning("Process flowchart image not found")
     

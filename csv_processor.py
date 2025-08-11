@@ -112,9 +112,11 @@ def validate_csv_structure(df: pd.DataFrame, address_type: str) -> Dict[str, any
     if len(df.columns) < 1:
         raise CSVValidationError("CSV must contain at least one column (address)")
     
-    # Check maximum columns (should only have exactly 3 columns)
-    if len(df.columns) > 3:
-        raise CSVValidationError(f"CSV contains {len(df.columns)} columns. Expected exactly 3 columns: Address, Primary Approved Use, Secondary Approved Use")
+    # Check maximum columns (should only have exactly 3 columns for shophouse, flexible for industrial)
+    if address_type.lower() == "shophouse" and len(df.columns) > 3:
+        raise CSVValidationError(f"CSV contains {len(df.columns)} columns. For shophouse processing, expected exactly 3 columns: Address, Primary Approved Use, Secondary Approved Use")
+    elif address_type.lower() == "industrial" and len(df.columns) > 3:
+        validation_result['warnings'].append(f"CSV contains {len(df.columns)} columns. For industrial processing, only the first column (Address) is required. Additional columns will be processed if available.")
     
     # Validate first column (addresses) - cannot be entirely empty
     if df.iloc[:, 0].isna().all():
@@ -161,36 +163,66 @@ def validate_csv_structure(df: pd.DataFrame, address_type: str) -> Dict[str, any
         if len(addresses_with_commas) > 5:
             validation_result['warnings'].append(f"... and {len(addresses_with_commas) - 5} more addresses with comma issues")
     
-    # Validate primary approved use column (column 2) - must exist and contain strings
-    if len(df.columns) < 2:
-        raise CSVValidationError("CSV must contain at least 2 columns: Address and Primary Approved Use")
+    # Validate primary approved use column (column 2) - requirement depends on address type
+    if address_type.lower() == "shophouse":
+        # For shophouse addresses, primary approved use is required
+        if len(df.columns) < 2:
+            raise CSVValidationError("CSV must contain at least 2 columns for shophouse processing: Address and Primary Approved Use")
+        
+        primary_use_col = df.iloc[:, 1]
+        
+        # Check if primary approved use column is entirely empty
+        if primary_use_col.isna().all():
+            raise CSVValidationError("Primary approved use column (column 2) cannot be entirely empty for shophouse processing")
+        
+        # Count empty primary approved use entries
+        primary_use_empty = primary_use_col.isna().sum()
+        if primary_use_empty > 0:
+            validation_result['warnings'].append(f"Found {primary_use_empty} empty primary approved use entries")
+        
+        # Validate that primary approved use entries are strings (not numbers or other types)
+        non_string_primary_uses = []
+        for i, use in enumerate(primary_use_col.dropna()):
+            if pd.isna(use):
+                continue
+            use_str = str(use).strip()
+            if not use_str:  # Empty string after stripping
+                continue
+            if use_str.replace('.', '').replace('-', '').isdigit():  # Looks like a number
+                non_string_primary_uses.append(f"Row {i+2}: '{use_str}' - Primary approved use appears to be numeric")
+        
+        if non_string_primary_uses:
+            validation_result['warnings'].extend(non_string_primary_uses[:5])
+            if len(non_string_primary_uses) > 5:
+                validation_result['warnings'].append(f"... and {len(non_string_primary_uses) - 5} more numeric primary approved use issues")
     
-    primary_use_col = df.iloc[:, 1]
-    
-    # Check if primary approved use column is entirely empty
-    if primary_use_col.isna().all():
-        raise CSVValidationError("Primary approved use column (column 2) cannot be entirely empty")
-    
-    # Count empty primary approved use entries
-    primary_use_empty = primary_use_col.isna().sum()
-    if primary_use_empty > 0:
-        validation_result['warnings'].append(f"Found {primary_use_empty} empty primary approved use entries")
-    
-    # Validate that primary approved use entries are strings (not numbers or other types)
-    non_string_primary_uses = []
-    for i, use in enumerate(primary_use_col.dropna()):
-        if pd.isna(use):
-            continue
-        use_str = str(use).strip()
-        if not use_str:  # Empty string after stripping
-            continue
-        if use_str.replace('.', '').replace('-', '').isdigit():  # Looks like a number
-            non_string_primary_uses.append(f"Row {i+2}: '{use_str}' - Primary approved use appears to be numeric")
-    
-    if non_string_primary_uses:
-        validation_result['warnings'].extend(non_string_primary_uses[:5])
-        if len(non_string_primary_uses) > 5:
-            validation_result['warnings'].append(f"... and {len(non_string_primary_uses) - 5} more numeric primary approved use issues")
+    elif address_type.lower() == "industrial":
+        # For industrial addresses, only address column is required
+        if len(df.columns) >= 2:
+            # If primary approved use column exists, validate it but don't require it
+            primary_use_col = df.iloc[:, 1]
+            primary_use_empty = primary_use_col.isna().sum()
+            
+            if primary_use_empty == len(df):
+                validation_result['warnings'].append("Primary approved use column (column 2) is entirely empty (this is acceptable for industrial processing)")
+            elif primary_use_empty > 0:
+                validation_result['warnings'].append(f"Found {primary_use_empty} empty primary approved use entries (acceptable for industrial processing)")
+            
+            # Validate that primary approved use entries are strings when present
+            non_string_primary_uses = []
+            for i, use in enumerate(primary_use_col.dropna()):
+                if pd.isna(use):
+                    continue
+                use_str = str(use).strip()
+                if not use_str:  # Empty string after stripping
+                    continue
+                if use_str.replace('.', '').replace('-', '').isdigit():  # Looks like a number
+                    non_string_primary_uses.append(f"Row {i+2}: '{use_str}' - Primary approved use appears to be numeric")
+            
+            if non_string_primary_uses:
+                validation_result['warnings'].extend(non_string_primary_uses[:5])
+                if len(non_string_primary_uses) > 5:
+                    validation_result['warnings'].append(f"... and {len(non_string_primary_uses) - 5} more numeric primary approved use issues")
     
     # Validate secondary approved use column (column 3) - optional but should be strings if present
     if len(df.columns) >= 3:
