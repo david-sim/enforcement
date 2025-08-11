@@ -416,22 +416,21 @@ def process_single_record_with_ui(single_record_data: dict, address_type: str) -
             return False, None
 
 
-def generate_summary_pdf(results: List[List[str]], address_type: str) -> bytes:
+def generate_summary_report(results: List[List[str]], address_type: str) -> bytes:
     """
-    Generate a PDF summary report of the processing results.
+    Generate a text summary report of the processing results.
     
     Args:
         results: List of processed address results
         address_type: Type of addresses processed
     
     Returns:
-        PDF content as bytes
+        Text report content as bytes
     """
-    # Since reportlab is not available, use the text-based approach
-    return generate_text_summary_pdf(results, address_type)
+    return generate_text_summary_report(results, address_type)
 
 
-def generate_text_summary_pdf(results: List[List[str]], address_type: str) -> bytes:
+def generate_text_summary_report(results: List[List[str]], address_type: str) -> bytes:
     """
     Generate a simple text-based summary report.
     """
@@ -630,21 +629,21 @@ def display_persistent_results(result_data: Tuple, address_type: str):
         )
     
     with col2:
-        # Generate PDF summary report
+        # Generate text summary report
         try:
-            pdf_buffer = generate_summary_pdf(results, address_type)
-            pdf_filename = f"{address_type}_summary_report_{timestamp}.pdf"
+            text_buffer = generate_summary_report(results, address_type)
+            report_filename = f"{address_type}_summary_report_{timestamp}.txt"
             
             st.download_button(
                 label=f"📑 Download Summary Report",
-                data=pdf_buffer,
-                file_name=pdf_filename,
-                mime="application/pdf",
+                data=text_buffer,
+                file_name=report_filename,
+                mime="text/plain",
                 use_container_width=True,
-                key=f"download_pdf_{timestamp}"  # Unique key to prevent widget conflicts
+                key=f"download_report_{timestamp}"  # Unique key to prevent widget conflicts
             )
         except Exception as e:
-            st.warning(f"PDF generation unavailable: {str(e)}")
+            st.warning(f"Report generation unavailable: {str(e)}")
     
     # Display results summary
     display_results_summary(results, address_type)

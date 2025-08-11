@@ -22,6 +22,72 @@ try:
 except ImportError:
     STREAMLIT_AVAILABLE = False
 
+# Rate limiting globals
+_last_api_call_time = 0
+_api_call_count = 0
+_rate_limit_reset_time = 0
+
+
+def get_rate_limiting_config() -> Dict[str, float]:
+    """Get rate limiting configuration from Streamlit secrets or use defaults."""
+    defaults = {
+        "rate_limit_per_hour": 950,
+        "rate_limit_delay": 3.6,
+        "min_delay_between_calls": 4.0
+    }
+    
+    if STREAMLIT_AVAILABLE:
+        try:
+            import streamlit as st
+            # Read from secrets.toml
+            return {
+                "rate_limit_per_hour": float(st.secrets.get("RATE_LIMIT_PER_HOUR", defaults["rate_limit_per_hour"])),
+                "rate_limit_delay": float(st.secrets.get("RATE_LIMIT_DELAY", defaults["rate_limit_delay"])),
+                "min_delay_between_calls": float(st.secrets.get("MIN_DELAY_BETWEEN_CALLS", defaults["min_delay_between_calls"]))
+            }
+        except Exception as e:
+            print(f"⚠️ Could not read rate limiting config from streamlit secrets: {e}")
+            return defaults
+    
+    return defaults
+
+
+def apply_rate_limiting():
+    """Apply rate limiting to stay within API limits."""
+    global _last_api_call_time, _api_call_count, _rate_limit_reset_time
+    
+    # Get current configuration
+    config = get_rate_limiting_config()
+    rate_limit_per_hour = config["rate_limit_per_hour"]
+    min_delay_between_calls = config["min_delay_between_calls"]
+    
+    current_time = time.time()
+    
+    # Reset counter every hour
+    if current_time > _rate_limit_reset_time:
+        _api_call_count = 0
+        _rate_limit_reset_time = current_time + 3600  # Reset in 1 hour
+        print(f"🔄 Rate limit counter reset. New reset time: {time.ctime(_rate_limit_reset_time)}")
+    
+    # Check if we need to delay based on minimum time between calls
+    time_since_last_call = current_time - _last_api_call_time
+    if time_since_last_call < min_delay_between_calls:
+        delay_needed = min_delay_between_calls - time_since_last_call
+        print(f"⏳ Rate limiting: waiting {delay_needed:.1f}s before next API call...")
+        time.sleep(delay_needed)
+    
+    # Check if we're approaching hourly limit
+    if _api_call_count >= rate_limit_per_hour:
+        time_until_reset = _rate_limit_reset_time - time.time()
+        if time_until_reset > 0:
+            print(f"⚠️ Hourly rate limit reached ({_api_call_count}/{rate_limit_per_hour}). Waiting {time_until_reset:.1f}s...")
+            time.sleep(time_until_reset + 1)  # Wait until reset + 1 second buffer
+    
+    # Update tracking variables
+    _last_api_call_time = time.time()
+    _api_call_count += 1
+    print(f"📊 API Call #{_api_call_count} this hour")
+
 
 def get_serpapi_key() -> Optional[str]:
     """Get SERPAPI key from secrets, with fallback for testing"""
@@ -84,6 +150,9 @@ def google_search_entity(query: str, location: str = "Singapore", max_retries: i
     for attempt in range(max_retries + 1):
         try:
             print(f"🔎 Attempt {attempt + 1}/{max_retries + 1} - Searching for: {query}")
+            
+            # Apply rate limiting before making API call
+            apply_rate_limiting()
             
             search_params = {
                 "q": query,
@@ -156,6 +225,26 @@ def format_search_results(organic_results: List[Dict[str, Any]]) -> str:
         )
     
     return "\n".join(formatted_results)
+
+
+def get_rate_limit_status() -> Dict[str, Any]:
+    """Get current rate limiting status for monitoring."""
+    global _api_call_count, _rate_limit_reset_time
+    
+    # Get current configuration
+    config = get_rate_limiting_config()
+    rate_limit_per_hour = config["rate_limit_per_hour"]
+    
+    current_time = time.time()
+    time_until_reset = max(0, _rate_limit_reset_time - current_time)
+    
+    return {
+        "calls_made_this_hour": _api_call_count,
+        "rate_limit": rate_limit_per_hour,
+        "calls_remaining": max(0, rate_limit_per_hour - _api_call_count),
+        "time_until_reset_minutes": time_until_reset / 60,
+        "reset_time": time.ctime(_rate_limit_reset_time) if _rate_limit_reset_time > 0 else "Not set"
+    }
 
 
 # Legacy compatibility functions

@@ -6,10 +6,60 @@ import datetime
 import re
 import pandas as pd
 import io
+import json
 from typing import Dict, List, Tuple, Optional, Callable, Any, Union
+from pydantic import BaseModel, Field
 from search_service import google_search_entity
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 from csv_processor import process_csv_with_validation, create_csv_for_download, CSVValidationError
+
+
+class OccupantResult(BaseModel):
+    """Structured result for occupant identification analysis."""
+    confirmed_occupant: str = Field(description="The confirmed occupant name or 'Need more information'")
+    matched_snippet: str = Field(description="Relevant snippets that match the address with sources and credibility")
+    business_summary: str = Field(description="Summary of the core and other business activities of the selected occupant")
+    reasoning: str = Field(description="Detailed reasoning for the occupant selection decision")
+
+
+class ComplianceResult(BaseModel):
+    """Structured result for compliance assessment analysis."""
+    compliance_level: str = Field(description="The compliance level: Unauthorised Use / Authorised Use / Likely Authorised Use / Likely Unauthorised Use / Need more information")
+    rationale: str = Field(description="Detailed rationale explaining the compliance level determination")
+
+
+def parse_json_response(response: str) -> Optional[dict]:
+    """
+    Parse JSON response from LLM with robust error handling.
+    
+    Args:
+        response: Raw LLM response string
+        
+    Returns:
+        Parsed JSON dict or None if parsing fails
+    """
+    try:
+        # Clean the response - remove leading/trailing whitespace
+        response = response.strip()
+        
+        # Handle potential code block markers
+        if response.startswith("```json"):
+            response = response[7:]
+        if response.startswith("```"):
+            response = response[3:]
+        if response.endswith("```"):
+            response = response[:-3]
+        
+        response = response.strip()
+        
+        # Parse JSON
+        return json.loads(response)
+    except json.JSONDecodeError as e:
+        print(f"JSON parsing error: {e}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error parsing JSON: {e}")
+        return None
 
 
 def generate_variant(address):
@@ -197,8 +247,15 @@ def process_single_address(address: str, llm: Any, primary_approved_use: str = "
     # Step 2: LLM Analysis for occupant identification
     log_progress(f"🤖 Analyzing occupant...")
     
-    occupant_prompt = f"""
-Today's date is {today}
+    # Define JSON structure outside f-string to avoid template variable conflicts
+    occupant_json_structure = """{{
+    "confirmed_occupant": "Business name from snippets or 'Need more information'",
+    "matched_snippet": "Quote the relevant snippets that match the address, including URL and source credibility assessment",
+    "business_summary": "Summarize the core and other business activities of the selected occupant",
+    "reasoning": "Show your responses for each step. Why that entity was chosen, or why no match could be confirmed"
+}}"""
+    
+    occupant_prompt = f"""Today's date is {today}
 Identify the current occupant of: {address} using the search results below.
 
 <google_search_results_original>
@@ -211,41 +268,30 @@ Identify the current occupant of: {address} using the search results below.
 
 ---
 
-### FORMAT
-
-Selected Occupant: <Business name from snippets or "Need more information">
----End of Confirmed Occupant---
-
-Verification Analysis:
-- Matched snippet(s): (Quote the relevant snippets that matches address, -url, -label credible/non-credible source and -source date)
-- Business Summary: (Summarise the core and other business activities of the selected occupant)
-- Reasoning: (Show your responses for each step. Why that entity was chosen, or why no match could be confirmed)
----End of Verification---
+Follow the step-by-step instructions in the system prompt and provide your analysis in the following JSON structure:
+{occupant_json_structure}
 """
 
-    prompt = ChatPromptTemplate.from_messages([
-        SystemMessagePromptTemplate.from_template(occupant_rules),
-        HumanMessagePromptTemplate.from_template(occupant_prompt)
+    # Create ChatPromptTemplate with system rules and human prompt
+    occupant_chat_prompt = ChatPromptTemplate.from_messages([
+        ("system", occupant_rules),
+        ("human", occupant_prompt)
     ])
 
-    occupant_chain = prompt | llm
+    # Create structured LLM chain
+    structured_llm = llm.with_structured_output(OccupantResult)
+    occupant_chain = occupant_chat_prompt | structured_llm
 
     try:
-        verified_occupant_response = occupant_chain.invoke({}).content.strip()
+        occupant_result = occupant_chain.invoke({})
         log_progress(f"✅ Occupant analysis completed")
-
-        # Parse the response using regex
-        confirmed_occupant_match = re.search(r"Selected Occupant:\s*(.*?)\s*---End of Confirmed Occupant---", 
-                                           verified_occupant_response, re.DOTALL)
-        confirmed_occupant = confirmed_occupant_match.group(1).strip() if confirmed_occupant_match else "Need more information"
-
-        verification_analysis_match = re.search(r"Verification Analysis:\s*(.*?)\s*---End of Verification---", 
-                                              verified_occupant_response, re.DOTALL)
-        verification_analysis = verification_analysis_match.group(1).strip() if verification_analysis_match else "Analysis not available"
+        
+        confirmed_occupant = occupant_result.confirmed_occupant
+        verification_analysis = f"Matched Snippets: {occupant_result.matched_snippet}\n\nBusiness Summary: {occupant_result.business_summary}\n\nReasoning: {occupant_result.reasoning}"
         
     except Exception as llm_error:
         log_progress(f"❌ Analysis failed: {str(llm_error)}")
-        confirmed_occupant = "Error"
+        confirmed_occupant = "Analysis not available"
         verification_analysis = f"LLM analysis failed: {str(llm_error)}"
 
     # Step 3: Compliance assessment if occupant is identified
@@ -273,48 +319,46 @@ Verification Analysis:
         # Compliance assessment
         log_progress(f"⚖️ Assessing compliance...")
         
-        compliance_prompt = f"""
-Assess the occupant's operations based on the following information:
+        # Define JSON structure outside f-string to avoid template variable conflicts
+        compliance_json_structure = """{{
+    "compliance_level": "One of: Unauthorised Use, Authorised Use, Likely Authorised Use, Likely Unauthorised Use, Need more information",
+    "rationale": "Detailed rationale for compliance level with specific references to B1 use categories"
+}}"""
+        
+        compliance_prompt = f"""Assess the occupant's operations based on the following information:
 
 ### Selected Occupant: {confirmed_occupant}
 
 Google Search Result of Occupant's name: {confirmed_occupant_google_search_results}
 Verification Analysis: {verification_analysis}
 
-Evaluate whether the occupant’s business operations are reasonably aligned with the approved use classification based on standard land use interpretations in Singapore.
+Evaluate whether the occupant's business operations are reasonably aligned with the approved use classification based on standard land use interpretations in Singapore.
 
 Primary approved use: {primary_approved_use}
 Secondary approved use: {secondary_approved_use}
 
 ---
 
-### FORMAT
-
-Compliance level: <Unauthorised Use / Authorised Use / Likely Authorised Use / Likely Unauthorised Use / Need more information >
----End of Compliance---
-Rationale: <Detailed rationale for compliance level>
----End of Rationale---
+Provide your assessment in the following JSON structure:
+{compliance_json_structure}
 """
 
-        complianceprompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(compliance_rules),
-            HumanMessagePromptTemplate.from_template(compliance_prompt)
+        # Create ChatPromptTemplate with system rules and human prompt
+        compliance_chat_prompt = ChatPromptTemplate.from_messages([
+            ("system", compliance_rules),
+            ("human", compliance_prompt)
         ])
 
-        compliance_chain = complianceprompt | llm
+        # Create structured LLM chain
+        structured_compliance_llm = llm.with_structured_output(ComplianceResult)
+        compliance_chain = compliance_chat_prompt | structured_compliance_llm
 
         try:
-            verified_compliance_response = compliance_chain.invoke({}).content.strip()
+            compliance_result = compliance_chain.invoke({})
             log_progress(f"✅ Compliance assessment completed")
-
-            # Parse compliance response using regex
-            compliance_match = re.search(r"(?i)\**Compliance Level:\s*(.*?)\s*-{3,}End of Compliance-{3,}", 
-                                       verified_compliance_response, re.DOTALL)
-            rationale_match = re.search(r"(?i)\**Rationale:\s*(.*?)\s*-{3,}End of Rationale-{3,}", 
-                                      verified_compliance_response, re.DOTALL)
-
-            compliance_level = compliance_match.group(1).strip() if compliance_match else "Assessment failed"
-            rationale = rationale_match.group(1).strip() if rationale_match else "Rationale not available"
+            
+            compliance_level = compliance_result.compliance_level
+            rationale = compliance_result.rationale
             
         except Exception as compliance_error:
             log_progress(f"❌ Compliance assessment failed")
