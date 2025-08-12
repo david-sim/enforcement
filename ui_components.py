@@ -127,12 +127,21 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
                 key="manual_address"
             )
             
-            primary_approved_use = st.text_input(
-                "Primary Approved Use",
-                placeholder=primary_placeholder,
-                help="Enter the primary approved use (optional)",
-                key="manual_primary_use"
-            )
+            # Primary Approved Use - mandatory for shophouse, optional for industrial
+            if address_type == "shophouse":
+                primary_approved_use = st.text_input(
+                    "Primary Approved Use *",
+                    placeholder=primary_placeholder,
+                    help="Enter the primary approved use (required for shophouse)",
+                    key="manual_primary_use"
+                )
+            else:  # industrial
+                primary_approved_use = st.text_input(
+                    "Primary Approved Use",
+                    placeholder=primary_placeholder,
+                    help="Enter the primary approved use (optional)",
+                    key="manual_primary_use"
+                )
             
             secondary_approved_use = st.text_input(
                 "Secondary Approved Use", 
@@ -144,7 +153,16 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
             submitted = st.form_submit_button("Validate Entry", type="secondary")
             
             if submitted:
-                if address.strip():
+                # Validate address is required
+                if not address.strip():
+                    st.error("❌ Address is required!")
+                    st.session_state.validated_single_record = None
+                # Validate primary approved use for shophouse
+                elif address_type == "shophouse" and not primary_approved_use.strip():
+                    st.error("❌ Primary Approved Use is required for shophouse addresses!")
+                    st.session_state.validated_single_record = None
+                else:
+                    # All validations passed
                     single_record_data = {
                         "address": address.strip(),
                         "primary_approved_use": primary_approved_use.strip() if primary_approved_use.strip() else None,
@@ -158,9 +176,6 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
                         st.info(f"Primary Use: {primary_approved_use}")
                     if secondary_approved_use.strip():
                         st.info(f"Secondary Use: {secondary_approved_use}")
-                else:
-                    st.error("❌ Address is required!")
-                    st.session_state.validated_single_record = None
         
         # Use session state data if available
         if st.session_state.validated_single_record is not None:
@@ -183,7 +198,10 @@ def create_realtime_progress_handler() -> Tuple[Callable, List[str]]:
     progress_bar = st.progress(0)
     status_text = st.empty()
     progress_log = st.empty()
-    progress_messages = []
+    # Use session state to persist progress messages
+    if 'progress_messages' not in st.session_state:
+        st.session_state.progress_messages = []
+    progress_messages = st.session_state.progress_messages
     
     def update_progress(message, current_index=None, total=None):
         """Update progress with real-time UI updates."""
@@ -191,19 +209,20 @@ def create_realtime_progress_handler() -> Tuple[Callable, List[str]]:
         sg_tz = pytz.timezone("Asia/Singapore")
         timestamp = datetime.datetime.now(sg_tz).strftime("%H:%M:%S")
         formatted_message = f"[{timestamp}] {message}"
-        
+
         # Always log to console
         print(formatted_message)
-        
+
         # Add to progress messages
         progress_messages.append(formatted_message)
-        
+        st.session_state.progress_messages = progress_messages
+
         # Update progress bar if index provided
         if current_index is not None and total is not None:
             progress = current_index / total
             progress_bar.progress(progress)
             status_text.info(f"Processing {current_index}/{total}: {message}")
-        
+
         # Update progress log with scrollable text area
         progress_log.text_area(
             "Processing Log",
@@ -305,44 +324,46 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing"
         st.error("Please check that your file is a valid CSV format.")
         return False, None
         
+    # Initialize progress messages if not already present
+    if 'progress_messages' not in st.session_state:
+        st.session_state.progress_messages = []
     # Create progress handlers
     progress_callback, progress_messages = create_realtime_progress_handler()
-    
+
     # Process addresses
     st.markdown(f"### Processing {address_type.title()} Addresses")
-    
+
     with st.spinner(f"Processing {address_type} addresses..."):
-            try:
-                print(f"🔍 UI Debug: About to call process_addresses_batch with {len(addresses)} addresses")
-                result = process_addresses_batch(addresses, llm, primary_approved_use_list, secondary_approved_use_list, address_type, progress_callback)
-                print(f"🔍 UI Debug: Got result of type: {type(result)}")
-                
-                # Debug: Check what we got back
-                if result is None:
-                    st.error("❌ Processing function returned None - this shouldn't happen!")
-                    print("❌ UI Debug: result is None!")
-                    return False, None
-                
-                if not isinstance(result, (tuple, list)) or len(result) != 2:
-                    st.error(f"❌ Processing function returned unexpected format: {type(result)}")
-                    print(f"❌ UI Debug: result format error - type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'no len'}")
-                    return False, None
-                
-                print(f"🔍 UI Debug: About to unpack result: {type(result)} with length {len(result)}")
-                results, csv_buffer = result
-                print(f"🔍 UI Debug: Successfully unpacked - results: {type(results)}, csv_buffer: {type(csv_buffer)}")
-                
-            except Exception as processing_error:
-                st.error(f"❌ Error during address processing: {str(processing_error)}")
-                print(f"❌ UI Debug: Exception caught: {str(processing_error)}")
-                import traceback
-                traceback.print_exc()
+        try:
+            print(f"🔍 UI Debug: About to call process_addresses_batch with {len(addresses)} addresses")
+            result = process_addresses_batch(addresses, llm, primary_approved_use_list, secondary_approved_use_list, address_type, progress_callback)
+            print(f"🔍 UI Debug: Got result of type: {type(result)}")
+
+            # Debug: Check what we got back
+            if result is None:
+                st.error("❌ Processing function returned None - this shouldn't happen!")
+                print("❌ UI Debug: result is None!")
                 return False, None
-    
+
+            if not isinstance(result, (tuple, list)) or len(result) != 2:
+                st.error(f"❌ Processing function returned unexpected format: {type(result)}")
+                print(f"❌ UI Debug: result format error - type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'no len'}")
+                return False, None
+
+            print(f"🔍 UI Debug: About to unpack result: {type(result)} with length {len(result)}")
+            results, csv_buffer = result
+            print(f"🔍 UI Debug: Successfully unpacked - results: {type(results)}, csv_buffer: {type(csv_buffer)}")
+
+        except Exception as processing_error:
+            st.error(f"❌ Error during address processing: {str(processing_error)}")
+            print(f"❌ UI Debug: Exception caught: {str(processing_error)}")
+            import traceback
+            traceback.print_exc()
+            return False, None
+
     # Display success message
-    # Processing completed successfully
     st.success(f"✅ Processing completed! Processed {len(results)} addresses.")
-    
+
     return True, (results, csv_buffer)
 
 

@@ -75,6 +75,8 @@ def display_main_page():
         
         if st.button(button_label, type="primary", use_container_width=True, 
                     help=button_help, key="start_processing_button"):
+            # Clear progress messages for fresh processing run
+            st.session_state.progress_messages = []
             with st.spinner("Processing..."):
                 if processing_mode == "file":
                     success, result_data = process_file_with_ui(uploaded_file, address_type)
@@ -95,6 +97,19 @@ def display_main_page():
     
     # Display persistent results if available
     if st.session_state.processing_results is not None:
+        # Show persistent processing log first (in original location)
+        if 'progress_messages' in st.session_state and st.session_state.progress_messages:
+            st.markdown(f"### Processing {address_type.title()} Addresses")
+            st.success(f"✅ Processing completed! Processed {len(st.session_state.processing_results[0])} addresses.")
+            st.markdown("#### Processing Log")
+            st.text_area(
+                "Progress Log",
+                value="\n".join(st.session_state.progress_messages),
+                height=200,
+                disabled=True,
+                key=f"persistent_main_progress_log_{len(st.session_state.progress_messages)}"
+            )
+        
         st.markdown("---")
         display_persistent_results(st.session_state.processing_results, address_type)
 
