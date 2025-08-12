@@ -90,9 +90,7 @@ def display_main_page():
                     st.error("Processing failed. Please check your input and try again.")
     else:
         # Show help text for what's needed
-        if not address_type:
-            st.info("👆 Please select an address type to continue")
-        elif uploaded_file is None and single_record_data is None:
+        if address_type and uploaded_file is None and single_record_data is None:
             st.info("👆 Please either upload a CSV file or enter a single record manually to continue")
     
     # Display persistent results if available
