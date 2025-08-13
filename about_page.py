@@ -1,5 +1,5 @@
 """
-About Us page for the Enforcement Processing Tool.
+About Us page for the Smart Compliance Operations Unit Tool.
 Contains project information, scope, objectives, and methodology.
 """
 import streamlit as st
@@ -16,12 +16,12 @@ def display_about_page():
     st.markdown("## 📋 Project Overview")
     
     st.markdown("""
-    **Enforcement Processing Tool** is an AI-assisted prototype developed to revolutionize 
+    **Smart Compliance Operations Unit Tool** is an AI-assisted prototype developed to revolutionise 
     the way unit addresses are processed for occupant identification and compliance detection 
-    of unauthorized use.
+    of unauthorised use.
     
     This innovative solution combines advanced artificial intelligence with automated 
-    processing capabilities to streamline enforcement operations and ensure regulatory compliance.
+    processing capabilities to streamline smart compliance operations and ensure regulatory compliance.
     """)
     
     # Project Scope Section
@@ -30,11 +30,11 @@ def display_about_page():
     st.markdown("""
     The scope of this project encompasses the development of an intelligent system that:
     
-    • **Resolves Unit Addresses**: Automatically processes and standardizes address formats
+    • **Resolves Unit Addresses**: Automatically processes and standardises address formats
     
     • **Identifies Occupants**: Uses AI to determine current occupants of specified addresses
     
-    • **Detects Compliance Issues**: Identifies potential unauthorized use of spaces
+    • **Detects Compliance Issues**: Identifies potential unauthorised use of spaces
     
     • **Automates Assessment**: Reduces manual processing time and human error
     
@@ -71,7 +71,7 @@ def display_about_page():
     st.markdown("## 🤖 LLM Model Implementation")
     
     st.markdown("""
-    Our Large Language Model (LLM) is strategically implemented across **three critical areas** 
+    The Large Language Model (LLM) is strategically implemented across **three critical areas** 
     to ensure comprehensive and accurate processing:
     """)
     
@@ -85,7 +85,7 @@ def display_about_page():
         **Purpose**: Identify current occupants
         
         **Process**:
-        - Analyze search results and data sources
+        - Analyse search results and data sources
         - Cross-reference multiple information points
         - Apply intelligent matching algorithms
         - Verify occupant authenticity
@@ -101,8 +101,8 @@ def display_about_page():
         
         **Process**:
         - Research occupant's business activities
-        - Analyze operational characteristics
-        - Categorize business type and functions
+        - Analyse operational characteristics
+        - Categorise business type and functions
         - Assess scale and scope of operations
         
         **Output**: Detailed business activity profile
@@ -127,7 +127,7 @@ def display_about_page():
     st.markdown("---")
     st.markdown("""
     <div style='text-align: center; color: #666666; font-style: italic;'>
-    Enforcement Processing Tool - AI-Assisted Compliance Management System
+    Smart Compliance Operations Unit Tool - AI-Assisted Compliance Management System
     </div>
     """, unsafe_allow_html=True)
 

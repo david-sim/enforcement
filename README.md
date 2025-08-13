@@ -1,6 +1,6 @@
-# ⚖️ Enforcement Processing Tool
+# 🛡️ Smart Compliance Operations Unit Tool
 
-An AI-powered enforcement processing system that analyzes addresses for compliance checking and occupant identification. The tool provides comprehensive automated analysis with both bulk processing capabilities and interactive single-record entry options.
+An AI-powered smart compliance operations system that analyzes addresses for compliance checking and occupant identification. The tool provides comprehensive automated analysis with both bulk processing capabilities and interactive single-record entry options.
 
 ## 🚀 Key Features
 

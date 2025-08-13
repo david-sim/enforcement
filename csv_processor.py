@@ -1,5 +1,5 @@
 """
-CSV Processing Module for Enforcement Engine
+CSV Processing Module for Smart Compliance Operations Engine
 Handles CSV file processing, validation, and data extraction with modular functions.
 """
 import pandas as pd

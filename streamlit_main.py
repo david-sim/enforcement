@@ -23,10 +23,10 @@ warnings.filterwarnings("ignore", message="Importing verbose from langchain root
 def display_main_page():
     """Display the main processing page."""
     # Main content area
-    st.title("⚖️ Enforcement Processing Tool")
+    st.title("🛡️ Smart Compliance Operations Unit Tool")
     
     st.markdown("""
-    Welcome to the AI-powered enforcement processing system. You can either upload a CSV file 
+    Welcome to the AI-powered smart compliance operations system. You can either upload a CSV file 
     for bulk processing or enter a single record manually for quick analysis.
     """)
     

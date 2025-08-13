@@ -1,5 +1,5 @@
 """
-Methodology page for the Enforcement Processing Tool.
+Methodology page for the Smart Compliance Operations Unit Tool.
 Contains detailed methodology, technology stack, and benefits information.
 """
 import streamlit as st
@@ -22,7 +22,7 @@ def display_methodology_page():
         
         1. **Data Input**: Upload CSV files containing addresses and approved use information
         
-        2. **Address Resolution**: Clean and standardize address formats for optimal processing
+        2. **Address Resolution**: Clean and standardise address formats for optimal processing
         
         3. **Information Gathering**: 
            - Perform targeted web searches for address information
@@ -36,8 +36,8 @@ def display_methodology_page():
         
         5. **AI Analysis Phase 2 - Business Assessment**:
            - Research identified occupant's business operations
-           - Analyze business activities and operational scope
-           - Categorize business type and functions
+           - Analyse business activities and operational scope
+           - Categorise business type and functions
         
         6. **AI Analysis Phase 3 - Compliance Check**:
            - Compare business activities with approved use classifications
@@ -54,7 +54,7 @@ def display_methodology_page():
         st.markdown("### 📊 Process Flow Illustration")
         try:
             flowchart_image = Image.open("imgs/process_flowchart_white.png")
-            st.image(flowchart_image, caption="Enforcement Processing Workflow", width=600)
+            st.image(flowchart_image, caption="Smart Compliance Operations Workflow", width=600)
         except:
             st.warning("Process flowchart image not found")
     
@@ -122,7 +122,7 @@ def display_methodology_page():
         st.markdown("""
         ### Data Processing:
         - **CSV Validation**: Automatic format checking and error reporting
-        - **Address Cleaning**: Standardization of address formats
+        - **Address Cleaning**: Standardisation of address formats
         - **Batch Processing**: Efficient handling of multiple addresses
         - **Progress Tracking**: Real-time status updates
         """)
@@ -130,7 +130,7 @@ def display_methodology_page():
     with impl_col2:
         st.markdown("""
         ### AI Integration:
-        - **Prompt Engineering**: Optimized LLM prompts for accuracy
+        - **Prompt Engineering**: Optimised LLM prompts for accuracy
         - **Chain Processing**: Sequential AI analysis stages
         - **Error Handling**: Robust failure recovery mechanisms
         - **Result Validation**: Quality assurance checks

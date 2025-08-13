@@ -1,5 +1,5 @@
 """
-Core enforcement processing engine.
+Core smart compliance operations processing engine.
 Contains the main address processing logic without UI dependencies.
 """
 import datetime

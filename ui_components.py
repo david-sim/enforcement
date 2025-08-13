@@ -1,5 +1,5 @@
 """
-UI utilities and Streamlit-specific components for the enforcement application.
+UI utilities and Streamlit-specific components for the smart compliance operations application.
 Contains reusable UI functions and progress handling.
 """
 import streamlit as st
@@ -7,8 +7,45 @@ import datetime
 import pytz
 import pandas as pd
 import io
+import os
 from typing import Tuple, Optional, Callable, List, Any
 from enforcement_engine import process_addresses_batch
+
+
+def load_sample_file(address_type: str) -> Optional[io.StringIO]:
+    """
+    Load sample CSV file based on address type.
+    
+    Args:
+        address_type: Either "shophouse" or "industrial"
+    
+    Returns:
+        StringIO object containing sample CSV data, or None if file not found
+    """
+    try:
+        # Get the path to the sample file (relative to current working directory)
+        sample_filename = f"{address_type}_sample_10_records.csv"
+        sample_path = os.path.join("data", sample_filename)
+        
+        # Check if file exists
+        if not os.path.exists(sample_path):
+            st.error(f"❌ Sample file not found: {sample_path}")
+            return None
+        
+        # Read the sample file
+        with open(sample_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+        
+        # Create a StringIO object that mimics an uploaded file
+        sample_file = io.StringIO(content)
+        sample_file.name = sample_filename  # Add name attribute for compatibility
+        sample_file.size = len(content)  # Add size attribute for compatibility
+        
+        return sample_file
+        
+    except Exception as e:
+        st.error(f"❌ Error loading sample file: {str(e)}")
+        return None
 
 
 def display_file_upload_section() -> Tuple[Optional[Any], str, Optional[dict]]:
@@ -87,16 +124,77 @@ Column 2: Primary Approved Use (Optional) - e.g., "Industrial", "Warehouse"
 Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
                 """)
         
-        # File uploader with static key
-        uploaded_file = st.file_uploader(
-            "Choose a CSV file",
-            type=['csv'],
-            help=f"Upload your CSV file containing {address_type} addresses",
-            key="csv_file_uploader"
-        )
+        # Create two columns for file upload and sample data options
+        col1, col2 = st.columns([2, 1])
         
-        # Display selected information
-        if uploaded_file is not None:
+        with col1:
+            # File uploader with static key
+            uploaded_file = st.file_uploader(
+                "Choose a CSV file",
+                type=['csv'],
+                help=f"Upload your CSV file containing {address_type} addresses",
+                key="csv_file_uploader"
+            )
+        
+        with col2:
+            st.markdown("**Or use sample data:**")
+            # Sample data button
+            if st.button(
+                f"📋 Load {address_type.title()} Sample",
+                help=f"Load sample {address_type} addresses for testing (10 sample addresses)",
+                key=f"load_sample_{address_type}",
+                use_container_width=True
+            ):
+                # Load sample file
+                sample_file = load_sample_file(address_type)
+                if sample_file:
+                    st.session_state['sample_file_loaded'] = sample_file
+                    st.session_state['sample_file_type'] = address_type
+                    st.success(f"✅ Loaded {address_type} sample data!")
+                    st.rerun()
+            
+            # Show sample file info
+            st.caption(f"💡 {address_type}_sample_10_records.csv")
+        
+        # Handle sample file loading
+        sample_file = None
+        if 'sample_file_loaded' in st.session_state and st.session_state.get('sample_file_type') == address_type:
+            sample_file = st.session_state['sample_file_loaded']
+            uploaded_file = sample_file  # Use sample file as uploaded file
+            
+            # Show sample data info with preview
+            st.success(f"📋 Using {address_type} sample data with 10 sample addresses")
+            
+            # Preview the sample data
+            with st.expander("👀 Preview Sample Data", expanded=False):
+                try:
+                    # Reset file pointer to beginning
+                    sample_file.seek(0)
+                    content = sample_file.read()
+                    sample_file.seek(0)  # Reset again for later use
+                    
+                    # Show first few lines
+                    lines = content.split('\n')[:4]  # Header + first 3 data rows
+                    preview_content = '\n'.join(lines)
+                    st.code(preview_content, language='csv')
+                    
+                    # Count total data rows (excluding header)
+                    total_lines = len([line for line in content.split('\n') if line.strip()])
+                    data_rows = total_lines - 1  # Subtract header
+                    st.caption(f"Showing first 3 rows of {data_rows} total addresses")
+                except Exception as e:
+                    st.error(f"Error previewing sample data: {e}")
+            
+            # Clear sample button
+            if st.button("❌ Clear Sample Data", key=f"clear_sample_{address_type}"):
+                if 'sample_file_loaded' in st.session_state:
+                    del st.session_state['sample_file_loaded']
+                if 'sample_file_type' in st.session_state:
+                    del st.session_state['sample_file_type']
+                st.rerun()
+        
+        # Display uploaded file information
+        elif uploaded_file is not None:
             st.success(f"File uploaded: {uploaded_file.name}")
             
             # Validate file size (optional)
@@ -465,7 +563,7 @@ def generate_text_summary_report(results: List[List[str]], address_type: str) ->
     sg_tz = pytz.timezone("Asia/Singapore")
     current_time = datetime.datetime.now(sg_tz).strftime("%Y-%m-%d %H:%M:%S SGT")
     
-    buffer.write("ENFORCEMENT PROCESSING SUMMARY REPORT\n")
+    buffer.write("SMART COMPLIANCE OPERATIONS SUMMARY REPORT\n")
     buffer.write("=" * 50 + "\n\n")
     buffer.write(f"Report Generated: {current_time}\n")
     buffer.write(f"Address Type: {address_type.title()}\n")
@@ -891,7 +989,7 @@ def display_sidebar():
         st.success("🤖 AI-assisted for accurate results")
         
         st.markdown("---")
-        st.markdown("**Enforcement Processing Tool**")
+        st.markdown("**Smart Compliance Operations Unit Tool**")
         st.markdown("Upload CSV files to process addresses for compliance assessment.")
         
         
@@ -908,7 +1006,7 @@ def display_sidebar():
 def setup_page_config():
     """Setup Streamlit page configuration."""
     st.set_page_config(
-        page_title="Enforcement Tool",
+        page_title="Smart Compliance Operations Unit Tool",
         page_icon="⚖️",
         layout="wide"
     )

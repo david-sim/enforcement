@@ -1,5 +1,5 @@
 """
-Configuration management utility for the enforcement application.
+Configuration management utility for the smart compliance operations application.
 
 This module provides centralized configuration management by loading settings
 from config.json and providing easy access to configuration values.
