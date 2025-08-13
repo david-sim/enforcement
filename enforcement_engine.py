@@ -14,10 +14,15 @@ from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTempla
 from csv_processor import process_csv_with_validation, create_csv_for_download, CSVValidationError
 
 
+# Global cache for multi-unit snippets across processing sessions
+_multi_unit_cache: Dict[str, List[Dict[str, str]]] = {}
+
+
 class OccupantResult(BaseModel):
     """Structured result for occupant identification analysis."""
     confirmed_occupant: str = Field(description="The confirmed occupant name or 'Need more information'")
     matched_snippet: str = Field(description="Relevant snippets that match the address with sources and credibility")
+    multiple_units_snippet: str = Field(description="Matched snippet(s) that matches address with multiple units: Quote the snippets from the selected matched snippet(s) that matches address and contains multiple units, -url, -label credible/non-credible source and -source date / NA, if none")
     business_summary: str = Field(description="Summary of the core and other business activities of the selected occupant")
     reasoning: str = Field(description="Detailed reasoning for the occupant selection decision")
 
@@ -134,6 +139,167 @@ def get_compliance_rules(address_type: str = "industrial") -> str:
     except Exception as e:
         print(f"⚠️ Could not load compliance rules from config: {e}")
         return ""
+
+
+def extract_base_address(address: str) -> str:
+    """
+    Extract base address for similarity matching (remove unit numbers).
+    
+    Args:
+        address: Full address string
+    
+    Returns:
+        Base address without unit specifics
+    """
+    print(f"🔍 [MULTI-UNIT] Extracting base address from: {address}")
+    
+    # Remove common unit patterns
+    base_address = re.sub(r'#\d+-\d+', '', address)  # Remove #01-05 patterns
+    base_address = re.sub(r'Unit \d+-\d+', '', base_address, flags=re.IGNORECASE)  # Remove Unit patterns
+    base_address = re.sub(r'Level \d+', '', base_address, flags=re.IGNORECASE)  # Remove Level patterns
+    base_address = re.sub(r'\b\d+[A-Z]\b', '', base_address)  # Remove block suffixes like 69A
+    base_address = re.sub(r'\s+', ' ', base_address).strip()  # Clean whitespace
+    
+    print(f"✅ [MULTI-UNIT] Base address extracted: '{base_address}'")
+    return base_address
+
+
+def store_multi_unit_data(address: str, occupant: str, multiple_units_snippet: str) -> None:
+    """
+    Store multi-unit snippet data for future reference.
+    
+    Args:
+        address: Current address being processed
+        occupant: Confirmed occupant name
+        multiple_units_snippet: Snippet containing multiple unit information
+    """
+    print(f"💾 [MULTI-UNIT] Attempting to store data for: {address}")
+    print(f"    Occupant: {occupant}")
+    print(f"    Snippet length: {len(multiple_units_snippet) if multiple_units_snippet else 0} chars")
+    
+    if multiple_units_snippet and multiple_units_snippet.strip() not in ["NA", "N/A", ""]:
+        base_address = extract_base_address(address)
+        
+        if base_address not in _multi_unit_cache:
+            _multi_unit_cache[base_address] = []
+            print(f"📝 [MULTI-UNIT] Created new cache entry for base address: '{base_address}'")
+        
+        # Avoid duplicates
+        new_entry = {
+            "occupant": occupant,
+            "snippet": multiple_units_snippet,
+            "source_address": address,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+        # Check if similar entry already exists
+        for entry in _multi_unit_cache[base_address]:
+            if entry["occupant"] == occupant and entry["snippet"] == multiple_units_snippet:
+                print(f"⚠️ [MULTI-UNIT] Duplicate entry detected, skipping storage")
+                return  # Skip duplicate
+        
+        _multi_unit_cache[base_address].append(new_entry)
+        print(f"✅ [MULTI-UNIT] Stored multi-unit data. Cache now has {len(_multi_unit_cache[base_address])} entries for '{base_address}'")
+        
+        # Keep cache size manageable (max 10 entries per base address)
+        if len(_multi_unit_cache[base_address]) > 10:
+            _multi_unit_cache[base_address] = _multi_unit_cache[base_address][-10:]
+            print(f"🧹 [MULTI-UNIT] Cache trimmed to 10 entries for '{base_address}'")
+    else:
+        print(f"❌ [MULTI-UNIT] No valid multi-unit snippet to store (empty or NA)")
+        base_address = extract_base_address(address)
+        
+        if base_address not in _multi_unit_cache:
+            _multi_unit_cache[base_address] = []
+        
+        # Avoid duplicates
+        new_entry = {
+            "occupant": occupant,
+            "snippet": multiple_units_snippet,
+            "source_address": address,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+        # Check if similar entry already exists
+        for entry in _multi_unit_cache[base_address]:
+            if entry["occupant"] == occupant and entry["snippet"] == multiple_units_snippet:
+                return  # Skip duplicate
+        
+        _multi_unit_cache[base_address].append(new_entry)
+        
+        # Keep cache size manageable (max 10 entries per base address)
+        if len(_multi_unit_cache[base_address]) > 10:
+            _multi_unit_cache[base_address] = _multi_unit_cache[base_address][-10:]
+
+
+def get_relevant_multi_unit_data(current_address: str) -> str:
+    """
+    Get relevant multi-unit data from previous processing for the current address.
+    
+    Args:
+        current_address: The address currently being processed
+    
+    Returns:
+        Formatted string of relevant multi-unit snippets or "No relevant multi-unit data available"
+    """
+    print(f"🔍 [MULTI-UNIT] Searching for relevant data for: {current_address}")
+    base_address = extract_base_address(current_address)
+    
+    if base_address not in _multi_unit_cache or not _multi_unit_cache[base_address]:
+        print(f"❌ [MULTI-UNIT] No cached data found for base address: '{base_address}'")
+        return "No relevant multi-unit data available"
+    
+    print(f"✅ [MULTI-UNIT] Found {len(_multi_unit_cache[base_address])} cached entries for '{base_address}'")
+    
+    relevant_snippets = []
+    for i, entry in enumerate(_multi_unit_cache[base_address]):
+        print(f"    📄 Entry {i+1}: {entry['occupant']} from {entry['source_address']}")
+        snippet_info = f"""
+Previous Record: {entry['source_address']}
+Occupant: {entry['occupant']}
+Multi-Unit Snippet: {entry['snippet']}
+Processed: {entry['timestamp'][:10]}
+---"""
+        relevant_snippets.append(snippet_info)
+    
+    if relevant_snippets:
+        result = f"Relevant multi-unit data from previous processing:\n" + "\n".join(relevant_snippets)
+        print(f"🎯 [MULTI-UNIT] Returning {len(relevant_snippets)} relevant snippets")
+        return result
+    
+    print(f"❌ [MULTI-UNIT] No relevant snippets found")
+    return "No relevant multi-unit data available"
+
+
+def clear_multi_unit_cache() -> None:
+    """Clear the multi-unit cache. Useful for starting fresh processing sessions."""
+    global _multi_unit_cache
+    cache_size_before = len(_multi_unit_cache)
+    total_entries_before = sum(len(entries) for entries in _multi_unit_cache.values())
+    
+    print(f"🧹 [MULTI-UNIT] Clearing cache: {cache_size_before} addresses with {total_entries_before} total entries")
+    _multi_unit_cache.clear()
+    print(f"✅ [MULTI-UNIT] Cache cleared successfully")
+
+
+def get_multi_unit_cache_stats() -> Dict[str, int]:
+    """
+    Get statistics about the multi-unit cache.
+    
+    Returns:
+        Dictionary with cache statistics
+    """
+    total_addresses = len(_multi_unit_cache)
+    total_entries = sum(len(entries) for entries in _multi_unit_cache.values())
+    cache_size = len(str(_multi_unit_cache))
+    
+    print(f"📊 [MULTI-UNIT] Cache Stats: {total_addresses} addresses, {total_entries} entries, {cache_size} bytes")
+    
+    return {
+        "cached_addresses": total_addresses,
+        "total_multi_unit_entries": total_entries,
+        "cache_size_bytes": cache_size
+    }
 
 
 def process_csv(command: str, csv_file) -> Dict[str, List[str]]:
@@ -253,12 +419,16 @@ def process_single_address(address: str, llm: Any, primary_approved_use: str = "
         address_search_results_raw_variant = f"Variant address search failed: {str(search_error)}"
     
     # Step 2: LLM Analysis for occupant identification
-    log_progress(f"🤖 Analyzing occupant...")
+    log_progress(f"🤖 Analysing occupant...")
+    
+    # Get relevant multi-unit data from previous processing
+    address_multiple_units = get_relevant_multi_unit_data(address)
     
     # Define JSON structure outside f-string to avoid template variable conflicts
     occupant_json_structure = """{{
     "confirmed_occupant": "Business name from snippets or 'Need more information'",
     "matched_snippet": "Quote the relevant snippets that match the address, including URL and source credibility assessment",
+    "multiple_units_snippet": "Matched snippet(s) that matches address with multiple units: Quote the snippets from the selected matched snippet(s) that matches address and contains multiple units, -url, -label credible/non-credible source and -source date / NA, if none",
     "business_summary": "Summarize the core and other business activities of the selected occupant",
     "reasoning": "Show your responses for each step. Why that entity was chosen, or why no match could be confirmed"
 }}"""
@@ -273,6 +443,10 @@ Identify the current occupant of: {address} using the search results below.
 <google_search_results_variant>
 {address_search_results_raw_variant}
 </google_search_results_variant>
+
+<relevant_google_snippets>
+{address_multiple_units}
+</relevant_google_snippets>
 
 ---
 
@@ -296,6 +470,10 @@ Follow the step-by-step instructions in the system prompt and provide your analy
         
         confirmed_occupant = occupant_result.confirmed_occupant
         verification_analysis = f"Matched Snippets: {occupant_result.matched_snippet}\n\nBusiness Summary: {occupant_result.business_summary}\n\nReasoning: {occupant_result.reasoning}"
+        
+        # Store multi-unit data for future reference if found
+        if hasattr(occupant_result, 'multiple_units_snippet'):
+            store_multi_unit_data(address, confirmed_occupant, occupant_result.multiple_units_snippet)
         
     except Exception as llm_error:
         log_progress(f"❌ Analysis failed: {str(llm_error)}")
@@ -335,7 +513,9 @@ Follow the step-by-step instructions in the system prompt and provide your analy
         
         compliance_prompt = f"""Assess the occupant's operations based on the following information:
 
-### Selected Occupant: {confirmed_occupant}
+Selected Occupant: {confirmed_occupant}
+
+Occupant's Address: {address}
 
 Google Search Result of Occupant's name: {confirmed_occupant_google_search_results}
 Verification Analysis: {verification_analysis}
@@ -407,6 +587,12 @@ def process_addresses_batch(addresses, llm, primary_approved_use_list=None, seco
     try:
         results = []
         total_addresses = len(addresses)
+        
+        # Clear multi-unit cache for fresh batch processing
+        # This ensures we start with a clean slate for each new batch
+        clear_multi_unit_cache()
+        if progress_callback:
+            progress_callback("🔄 Multi-unit cache cleared for fresh processing")
         
         # Handle default values for approved use lists
         if primary_approved_use_list is None:
