@@ -853,7 +853,7 @@ def display_sidebar():
         # Load and display main icon with transparent background
         try:
             from PIL import Image
-            main_icon = Image.open("imgs/icon_transparent.png")
+            main_icon = Image.open("imgs/icon_transparent-color-nobg.png")
             st.image(main_icon, use_container_width=True)
         except:
             st.info("Main icon not found")
