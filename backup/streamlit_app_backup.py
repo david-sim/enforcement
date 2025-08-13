@@ -33,7 +33,22 @@ if not OPENAI_API_KEY:
 openai.api_key = OPENAI_API_KEY
 client = openai.OpenAI()
 
-llm = ChatOpenAI(model=st.secrets.get("LLM_MODEL",None), temperature=st.secrets.get("LLM_TEMPERATURE",None))
+# Initialize LLM with config from config.json
+try:
+    from config_manager import get_llm_model, get_llm_temperature
+    llm = ChatOpenAI(
+        model=get_llm_model(),
+        temperature=float(get_llm_temperature()),
+        api_key=st.secrets.get("OPENAI_API_KEY")
+    )
+except Exception as e:
+    st.error(f"Failed to initialize LLM: {e}")
+    # Fallback to default values
+    llm = ChatOpenAI(
+        model="gpt-4.1",
+        temperature=0.78,
+        api_key=st.secrets.get("OPENAI_API_KEY")
+    )
 
 # Streamlit Page Configuration
 st.set_page_config(

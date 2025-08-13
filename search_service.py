@@ -29,27 +29,28 @@ _rate_limit_reset_time = 0
 
 
 def get_rate_limiting_config() -> Dict[str, float]:
-    """Get rate limiting configuration from Streamlit secrets or use defaults."""
+    """Get rate limiting configuration from config file or use defaults."""
     defaults = {
         "rate_limit_per_hour": 950,
         "rate_limit_delay": 3.6,
         "min_delay_between_calls": 4.0
     }
     
-    if STREAMLIT_AVAILABLE:
-        try:
-            import streamlit as st
-            # Read from secrets.toml
-            return {
-                "rate_limit_per_hour": float(st.secrets.get("RATE_LIMIT_PER_HOUR", defaults["rate_limit_per_hour"])),
-                "rate_limit_delay": float(st.secrets.get("RATE_LIMIT_DELAY", defaults["rate_limit_delay"])),
-                "min_delay_between_calls": float(st.secrets.get("MIN_DELAY_BETWEEN_CALLS", defaults["min_delay_between_calls"]))
-            }
-        except Exception as e:
-            print(f"⚠️ Could not read rate limiting config from streamlit secrets: {e}")
-            return defaults
-    
-    return defaults
+    try:
+        from config_manager import (
+            get_rate_limit_per_hour,
+            get_rate_limit_delay, 
+            get_min_delay_between_calls
+        )
+        # Read from config.json
+        return {
+            "rate_limit_per_hour": float(get_rate_limit_per_hour()),
+            "rate_limit_delay": float(get_rate_limit_delay()),
+            "min_delay_between_calls": float(get_min_delay_between_calls())
+        }
+    except Exception as e:
+        print(f"⚠️ Could not read rate limiting config from config file: {e}")
+        return defaults
 
 
 def apply_rate_limiting():

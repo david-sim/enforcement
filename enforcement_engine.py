@@ -105,26 +105,34 @@ def generate_variant(address):
 
 
 def get_occupant_rules(address_type: str = "industrial") -> str:
-    """Get occupant rules from secrets based on address type, with fallback for testing"""
+    """Get occupant rules from config based on address type, with fallback for testing"""
     try:
-        import streamlit as st
+        from config_manager import (
+            get_shophouse_occupant_rules, 
+            get_industrial_occupant_rules
+        )
         if address_type.lower() == "shophouse":
-            return st.secrets.get("SHOPHOUSE_OCCUPANT_RULES", "")
+            return get_shophouse_occupant_rules()
         else:
-            return st.secrets.get("INDUSTRIAL_OCCUPANT_RULES", "")
-    except:
+            return get_industrial_occupant_rules()
+    except Exception as e:
+        print(f"⚠️ Could not load occupant rules from config: {e}")
         return ""
 
 
 def get_compliance_rules(address_type: str = "industrial") -> str:
-    """Get compliance rules from secrets based on address type, with fallback for testing"""
+    """Get compliance rules from config based on address type, with fallback for testing"""
     try:
-        import streamlit as st
+        from config_manager import (
+            get_shophouse_compliance_rules, 
+            get_industrial_compliance_rules
+        )
         if address_type.lower() == "shophouse":
-            return st.secrets.get("SHOPHOUSE_COMPLIANCE_RULES", "")
+            return get_shophouse_compliance_rules()
         else:
-            return st.secrets.get("INDUSTRIAL_COMPLIANCE_RULES", "")
-    except:
+            return get_industrial_compliance_rules()
+    except Exception as e:
+        print(f"⚠️ Could not load compliance rules from config: {e}")
         return ""
 
 

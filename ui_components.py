@@ -240,17 +240,22 @@ def initialize_llm() -> Optional[Any]:
     if 'llm' not in st.session_state:
         try:
             from langchain_openai import ChatOpenAI
+            from config_manager import get_llm_model, get_llm_temperature
             
-            # Validate API key exists
+            # Validate API key exists (still from secrets for security)
             api_key = st.secrets.get("OPENAI_API_KEY")
             if not api_key:
                 st.error("❌ OPENAI_API_KEY not found in secrets")
                 return None
             
+            # Get model and temperature from config
+            model = get_llm_model()
+            temperature = float(get_llm_temperature())
+            
             llm = ChatOpenAI(
-                model="gpt-4o",
+                model=model,
                 api_key=api_key,
-                temperature=0
+                temperature=temperature
             )
             st.session_state.llm = llm
             return llm
