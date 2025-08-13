@@ -46,7 +46,7 @@ def display_file_upload_section() -> Tuple[Optional[Any], str, Optional[dict]]:
     # Input method selector
     input_method = st.radio(
         "How would you like to provide your data?",
-        options=["Upload CSV file", "Enter single record manually"],
+        options=["Upload CSV file for multiple records/address", "Enter single record manually"],
         help="Choose between bulk processing with CSV or entering one record manually",
         key="input_method_selector"
     )
@@ -68,7 +68,7 @@ def display_file_upload_section() -> Tuple[Optional[Any], str, Optional[dict]]:
     if 'validated_single_record' not in st.session_state:
         st.session_state.validated_single_record = None
     
-    if input_method == "Upload CSV file":
+    if input_method == "Upload CSV file for multiple records/address":
         st.markdown(f"#### 📁 Upload CSV File for {address_type.title()} Addresses")
         
         # Address-type-specific CSV format guidance
