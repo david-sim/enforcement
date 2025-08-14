@@ -469,6 +469,23 @@ Follow the step-by-step instructions in the system prompt and provide your analy
         log_progress(f"✅ Occupant analysis completed")
         
         confirmed_occupant = occupant_result.confirmed_occupant
+        
+        # Print and log confirmed occupant details for monitoring
+        occupant_details = f"🏢 CONFIRMED OCCUPANT: {confirmed_occupant}"
+        print(f"\n{'='*60}")
+        print(f"📍 ADDRESS: {address}")
+        print(f"🏢 CONFIRMED OCCUPANT: {confirmed_occupant}")
+        if hasattr(occupant_result, 'matched_snippet') and occupant_result.matched_snippet:
+            print(f"🔍 MATCHED SNIPPET: {occupant_result.matched_snippet}")
+        if hasattr(occupant_result, 'business_summary') and occupant_result.business_summary:
+            print(f"📝 BUSINESS SUMMARY: {occupant_result.business_summary}")
+        if hasattr(occupant_result, 'reasoning') and occupant_result.reasoning:
+            print(f"🧠 REASONING: {occupant_result.reasoning}")
+        print(f"{'='*60}\n")
+        
+        # Log to progress callback for UI display
+        log_progress(f"🏢 Occupant identified: {confirmed_occupant}")
+        
         verification_analysis = f"Matched Snippets: {occupant_result.matched_snippet}\n\nBusiness Summary: {occupant_result.business_summary}\n\nReasoning: {occupant_result.reasoning}"
         
         # Store multi-unit data for future reference if found
@@ -553,7 +570,7 @@ Provide your assessment in the following JSON structure:
             compliance_level = "Assessment failed"
             rationale = f"Compliance assessment failed: {str(compliance_error)}"
     
-    log_progress(f"✅ Processing completed for {address}")
+    # Individual address processing completed - no need for separate log since batch completion will be logged
     
     return {
         'address': address,

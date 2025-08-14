@@ -58,7 +58,7 @@ def display_file_upload_section() -> Tuple[Optional[Any], str, Optional[dict]]:
     """
     st.markdown("### Step 1: Select Address Type")
     
-    # Address type selector (moved to top for future customization)
+    # Address type selector
     address_type = st.selectbox(
         "Choose the type of address you're processing",
         options=["", "shophouse", "industrial"],
@@ -78,6 +78,7 @@ def display_file_upload_section() -> Tuple[Optional[Any], str, Optional[dict]]:
         st.info("👆 Please select an address type to continue")
         return None, "", None
     
+    # Show processing status if in progress
     st.markdown("### Step 2: Choose Input Method")
     
     # Input method selector
@@ -94,7 +95,9 @@ def display_file_upload_section() -> Tuple[Optional[Any], str, Optional[dict]]:
         st.session_state.previous_address_type = address_type
     elif (st.session_state.previous_input_method != input_method or 
           st.session_state.get('previous_address_type') != address_type):
+        # Clear all related session state when user changes input method or address type
         st.session_state.validated_single_record = None
+        st.session_state.progress_messages = []  # Clear progress log when user changes settings
         st.session_state.previous_input_method = input_method
         st.session_state.previous_address_type = address_type
     
@@ -210,13 +213,13 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
             if address_type == "shophouse":
                 address_placeholder = "e.g., 123 Smith Street #02-01 Singapore 123456"
                 address_help = "Enter the complete shophouse address including unit number and postal code"
-                primary_placeholder = "e.g., Shophouse, Commercial"
-                secondary_placeholder = "e.g., Retail, Food & Beverage"
+                primary_placeholder = "e.g., Office, Restaurant"
+                secondary_placeholder = "e.g., Eating House, Foodshop"
             else:  # industrial
-                address_placeholder = "e.g., 1 Industrial Park Road Singapore 123456"
+                address_placeholder = "e.g., 1 Yishun Industrial Street 1 #01-05 768160"
                 address_help = "Enter the complete industrial address including unit number and postal code"  
-                primary_placeholder = "e.g., Industrial, Warehouse"
-                secondary_placeholder = "e.g., Manufacturing, Storage"
+                primary_placeholder = "e.g., Manufacturing, Core Media"
+                secondary_placeholder = "e.g., Minimart, Showroom"
             
             address = st.text_input(
                 "Address *",
@@ -248,7 +251,11 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
                 key="manual_secondary_use"
             )
             
-            submitted = st.form_submit_button("Validate Entry", type="secondary")
+            submitted = st.form_submit_button(
+                "Validate Entry",
+                type="secondary", 
+                use_container_width=True
+            )
             
             if submitted:
                 # Validate address is required
@@ -296,6 +303,7 @@ def create_realtime_progress_handler() -> Tuple[Callable, List[str]]:
     progress_bar = st.progress(0)
     status_text = st.empty()
     progress_log = st.empty()
+        
     # Use session state to persist progress messages
     if 'progress_messages' not in st.session_state:
         st.session_state.progress_messages = []
@@ -321,16 +329,25 @@ def create_realtime_progress_handler() -> Tuple[Callable, List[str]]:
             progress_bar.progress(progress)
             status_text.info(f"Processing {current_index}/{total}: {message}")
 
-        # Update progress log with scrollable text area
+        # Show real-time progress log (newest messages at top)
+        reversed_messages = list(reversed(progress_messages))
+        display_messages = reversed_messages[:50]  # Limit to last 50 messages
+        
         progress_log.text_area(
-            "Processing Log",
-            value="\n".join(progress_messages),
+            "📋 Real-time Processing Log",
+            value="\n".join(display_messages),
             height=200,
             disabled=True,
-            key=f"progress_log_{len(progress_messages)}"
+            key=f"realtime_progress_log_{len(progress_messages)}"
         )
     
-    return update_progress, progress_messages
+    def clear_realtime_display():
+        """Clear the real-time display elements to prevent duplication."""
+        progress_bar.empty()
+        status_text.empty()
+        progress_log.empty()
+    
+    return update_progress, progress_messages, clear_realtime_display
 
 
 def initialize_llm() -> Optional[Any]:
@@ -427,46 +444,62 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing"
         st.error("Please check that your file is a valid CSV format.")
         return False, None
         
-    # Initialize progress messages if not already present
+    # Initialize progress messages if not already present - CLEAR old messages for new processing
     if 'progress_messages' not in st.session_state:
         st.session_state.progress_messages = []
-    # Create progress handlers
-    progress_callback, progress_messages = create_realtime_progress_handler()
+    else:
+        # Clear previous progress messages when starting new processing
+        st.session_state.progress_messages = []
+    
+    # Set processing state to disable UI elements
+    st.session_state.processing_in_progress = True
+    
+    # Create progress handlers BEFORE the spinner so they're visible
+    progress_callback, progress_messages, clear_realtime_display = create_realtime_progress_handler()
 
-    # Process addresses
-    st.markdown(f"### Processing {address_type.title()} Addresses")
+    # Process addresses with a simple spinner for the operation
+    print(f"🔍 UI Debug: About to call process_addresses_batch with {len(addresses)} addresses")
+    
+    # Use a more lightweight progress indication approach
+    with st.spinner(f"Processing {len(addresses)} {address_type} addresses..."):
+        result = process_addresses_batch(addresses, llm, primary_approved_use_list, secondary_approved_use_list, address_type, progress_callback)
+    
+    print(f"🔍 UI Debug: Got result of type: {type(result)}")
 
-    with st.spinner(f"Processing {address_type} addresses..."):
-        try:
-            print(f"🔍 UI Debug: About to call process_addresses_batch with {len(addresses)} addresses")
-            result = process_addresses_batch(addresses, llm, primary_approved_use_list, secondary_approved_use_list, address_type, progress_callback)
-            print(f"🔍 UI Debug: Got result of type: {type(result)}")
+    # Check and process the result
+    if result is None:
+        st.error("❌ Processing function returned None - this shouldn't happen!")
+        print("❌ UI Debug: result is None!")
+        clear_realtime_display()  # Clear real-time displays before re-enabling UI
+        st.session_state.processing_in_progress = False  # Re-enable UI on error
+        return False, None
 
-            # Debug: Check what we got back
-            if result is None:
-                st.error("❌ Processing function returned None - this shouldn't happen!")
-                print("❌ UI Debug: result is None!")
-                return False, None
+    if not isinstance(result, (tuple, list)) or len(result) != 2:
+        st.error(f"❌ Processing function returned unexpected format: {type(result)}")
+        print(f"❌ UI Debug: result format error - type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'no len'}")
+        clear_realtime_display()  # Clear real-time displays before re-enabling UI
+        st.session_state.processing_in_progress = False  # Re-enable UI on error
+        return False, None
 
-            if not isinstance(result, (tuple, list)) or len(result) != 2:
-                st.error(f"❌ Processing function returned unexpected format: {type(result)}")
-                print(f"❌ UI Debug: result format error - type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'no len'}")
-                return False, None
+    try:
+        print(f"🔍 UI Debug: About to unpack result: {type(result)} with length {len(result)}")
+        results, csv_buffer = result
+        print(f"🔍 UI Debug: Successfully unpacked - results: {type(results)}, csv_buffer: {type(csv_buffer)}")
 
-            print(f"🔍 UI Debug: About to unpack result: {type(result)} with length {len(result)}")
-            results, csv_buffer = result
-            print(f"🔍 UI Debug: Successfully unpacked - results: {type(results)}, csv_buffer: {type(csv_buffer)}")
+    except Exception as processing_error:
+        st.error(f"❌ Error during address processing: {str(processing_error)}")
+        print(f"❌ UI Debug: Exception caught: {str(processing_error)}")
+        import traceback
+        traceback.print_exc()
+        clear_realtime_display()  # Clear real-time displays before re-enabling UI
+        st.session_state.processing_in_progress = False  # Re-enable UI on error
+        return False, None
 
-        except Exception as processing_error:
-            st.error(f"❌ Error during address processing: {str(processing_error)}")
-            print(f"❌ UI Debug: Exception caught: {str(processing_error)}")
-            import traceback
-            traceback.print_exc()
-            return False, None
+    # Processing completed successfully - clear real-time displays and re-enable UI
+    clear_realtime_display()  # Clear progress bar, status, and real-time log to prevent duplication
+    st.session_state.processing_in_progress = False
 
-    # Display success message
-    st.success(f"✅ Processing completed! Processed {len(results)} addresses.")
-
+    # Success message will be handled by main application
     return True, (results, csv_buffer)
 
 
@@ -493,51 +526,67 @@ def process_single_record_with_ui(single_record_data: dict, address_type: str) -
     
     st.success(f"✅ Processing single {address_type} address")
     
-    # Create progress handlers
-    progress_callback, progress_messages = create_realtime_progress_handler()
+    # Clear previous progress messages when starting new processing
+    st.session_state.progress_messages = []
     
-    # Process the single address
-    st.markdown(f"### Processing {address_type.title()} Address")
+    # Set processing state to disable UI elements
+    st.session_state.processing_in_progress = True
     
-    with st.spinner(f"Processing {address_type} address..."):
-        try:
-            print(f"🔍 UI Debug: About to call process_addresses_batch with 1 address")
-            result = process_addresses_batch(addresses, llm, primary_approved_use_list, secondary_approved_use_list, address_type, progress_callback)
-            print(f"🔍 UI Debug: Got result of type: {type(result)}")
+    # Create progress handlers BEFORE the spinner so they're visible
+    progress_callback, progress_messages, clear_realtime_display = create_realtime_progress_handler()
+    
+    # Process the single address with lightweight spinner
+    print(f"🔍 UI Debug: About to call process_addresses_batch with 1 address")
+    
+    with st.spinner(f"Processing 1 {address_type} address..."):
+        result = process_addresses_batch(addresses, llm, primary_approved_use_list, secondary_approved_use_list, address_type, progress_callback)
+    
+    print(f"🔍 UI Debug: Got result of type: {type(result)}")
             
-            # Debug: Check what we got back
-            if result is None:
-                st.error("❌ Processing function returned None - this shouldn't happen!")
-                print("❌ UI Debug: result is None!")
-                return False, None
-            
-            if not isinstance(result, (tuple, list)) or len(result) != 2:
-                st.error(f"❌ Processing function returned unexpected format: {type(result)}")
-                print(f"❌ UI Debug: result format error - type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'no len'}")
-                return False, None
-            
-            # Correct unpacking: process_addresses_batch returns (results_list, csv_buffer)
-            results, csv_buffer = result
-            print(f"🔍 UI Debug: results type={type(results)}, csv_buffer type={type(csv_buffer)}")
-            
-            if not results:
-                st.warning("⚠️ Processing completed but no results returned")
-                print("⚠️ UI Debug: No results returned")
-                return False, None
-            
-            print(f"🔍 UI Debug: Results length: {len(results)}")
-            
-            # Processing completed successfully 
-            st.success(f"✅ Successfully processed 1 address!")
-            
-            return True, (results, csv_buffer)
-            
-        except Exception as e:
-            st.error(f"❌ Error during processing: {str(e)}")
-            print(f"❌ UI Debug: Exception during processing: {str(e)}")
-            import traceback
-            print(f"❌ UI Debug: Full traceback: {traceback.format_exc()}")
+    # Debug: Check what we got back
+    if result is None:
+        st.error("❌ Processing function returned None - this shouldn't happen!")
+        print("❌ UI Debug: result is None!")
+        clear_realtime_display()  # Clear real-time displays before re-enabling UI
+        st.session_state.processing_in_progress = False  # Re-enable UI on error
+        return False, None
+    
+    if not isinstance(result, (tuple, list)) or len(result) != 2:
+        st.error(f"❌ Processing function returned unexpected format: {type(result)}")
+        print(f"❌ UI Debug: result format error - type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'no len'}")
+        clear_realtime_display()  # Clear real-time displays before re-enabling UI
+        st.session_state.processing_in_progress = False  # Re-enable UI on error
+        return False, None
+    
+    try:
+        # Correct unpacking: process_addresses_batch returns (results_list, csv_buffer)
+        results, csv_buffer = result
+        print(f"🔍 UI Debug: results type={type(results)}, csv_buffer type={type(csv_buffer)}")
+        
+        if not results:
+            st.warning("⚠️ Processing completed but no results returned")
+            print("⚠️ UI Debug: No results returned")
+            clear_realtime_display()  # Clear real-time displays before re-enabling UI
+            st.session_state.processing_in_progress = False  # Re-enable UI
             return False, None
+        
+        print(f"🔍 UI Debug: Results length: {len(results)}")
+        
+        # Processing completed successfully - clear real-time displays and re-enable UI
+        clear_realtime_display()  # Clear progress bar, status, and real-time log to prevent duplication
+        st.session_state.processing_in_progress = False
+        
+        # Success message will be handled by main application
+        return True, (results, csv_buffer)
+        
+    except Exception as e:
+        st.error(f"❌ Error during processing: {str(e)}")
+        print(f"❌ UI Debug: Exception during processing: {str(e)}")
+        import traceback
+        print(f"❌ UI Debug: Full traceback: {traceback.format_exc()}")
+        clear_realtime_display()  # Clear real-time displays before re-enabling UI
+        st.session_state.processing_in_progress = False  # Re-enable UI on error
+        return False, None
 
 
 def generate_summary_report(results: List[List[str]], address_type: str) -> bytes:
@@ -722,7 +771,7 @@ def display_persistent_results(result_data: Tuple, address_type: str):
     results, csv_buffer = result_data
     
     st.markdown("## 📋 Processing Results")
-    st.success(f"✅ Processing completed successfully! Processed {len(results)} record(s).")
+    # Success message is already displayed in main application
     
     # For single records, display detailed results immediately
     if len(results) == 1:

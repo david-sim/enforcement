@@ -77,6 +77,10 @@ def display_main_page():
                     help=button_help, key="start_processing_button"):
             # Clear progress messages for fresh processing run
             st.session_state.progress_messages = []
+            # Flag to indicate we're starting processing (not showing results)
+            st.session_state.show_persistent_results = False
+            
+            # Start processing immediately (don't use rerun)
             with st.spinner("Processing..."):
                 if processing_mode == "file":
                     success, result_data = process_file_with_ui(uploaded_file, address_type)
@@ -84,9 +88,10 @@ def display_main_page():
                     success, result_data = process_single_record_with_ui(single_record_data, address_type)
                 
                 if success:
-                    # Store results in session state
+                    # Store results in session state and enable persistent display
                     st.session_state.processing_results = result_data
                     st.session_state.last_processed_inputs = current_inputs
+                    st.session_state.show_persistent_results = True
                     st.balloons()
                 else:
                     st.error("Processing failed. Please check your input and try again.")
@@ -95,8 +100,9 @@ def display_main_page():
         if address_type and uploaded_file is None and single_record_data is None:
             st.info("👆 Please either upload a CSV file or enter a single record manually to continue")
     
-    # Display persistent results if available
-    if st.session_state.processing_results is not None:
+    # Display persistent results if available and flag is set
+    if (st.session_state.processing_results is not None and 
+        st.session_state.get('show_persistent_results', True)):  # Default to True for backward compatibility
         # Show persistent processing log first (in original location)
         if 'progress_messages' in st.session_state and st.session_state.progress_messages:
             st.markdown(f"### Processing {address_type.title()} Addresses")
