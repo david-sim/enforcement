@@ -41,16 +41,26 @@ An AI-powered smart compliance operations system that analyzes addresses for com
 
 ## ⚙️ Setup Instructions
 
-### 1. API Configuration
-Configure your OpenAI API key using one of these methods:
+### 1. API and Authentication Configuration
+Configure your OpenAI & SERP API key using one of these methods:
 - **Streamlit Secrets**: Add to `secrets.toml`
   ```toml
   OPENAI_API_KEY = "your-api-key-here"
+  SERPAPI_API_KEY = "your-api-key-here"
   ```
 - **Environment Variable**: 
   ```bash
   export OPENAI_API_KEY="your-api-key-here"
+  export SERPAPI_API_KEY ="your-api-key-here"
   ```
+Configure the credentials for authentication:
+- **Streamlit Secrets**: Add to `secrets.toml`
+[credentials]
+users = [
+    {username = "your-username1", password = "your-password-here"},
+    {username = "your-username2", password = "your-password-here"}
+]
+
 
 ### 2. Installation
 ```bash
