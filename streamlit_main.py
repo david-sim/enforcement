@@ -16,9 +16,19 @@ from ui_components import (
 )
 from about_page import display_about_page
 from methodology_page import display_methodology_page
+from login_handler import show_login_form, add_logout_button, is_authenticated
 
 # Suppress warnings
 warnings.filterwarnings("ignore", message="Importing verbose from langchain root module is no longer supported.*")
+
+def check_authentication():
+    """Check if user is authenticated and handle login flow."""
+    # Check if user is authenticated (includes session timeout check)
+    if not is_authenticated():
+        show_login_form()
+        return False
+    
+    return True
 
 def display_main_page():
     """Display the main processing page."""
@@ -122,15 +132,26 @@ def display_main_page():
 def main():
     """Main application entry point."""
     try:
-        # Setup page configuration
-        setup_page_config()
+        # Setup page configuration ONLY ONCE
+        if 'page_config_set' not in st.session_state:
+            st.set_page_config(
+                page_title="Smart Compliance Operations Unit Tool",
+                page_icon="⚖️",
+                layout="wide"
+            )
+            st.session_state.page_config_set = True
+        
+        # Check authentication first
+        if not check_authentication():
+            return  # Exit if not authenticated, login form is shown
         
         # Initialize session state
         if 'current_page' not in st.session_state:
             st.session_state.current_page = 'Main'
         
-        # Display sidebar (includes navigation)
+        # Display sidebar (includes navigation and logout button)
         display_sidebar()
+        add_logout_button()
         
         # Render the selected page
         current_page = st.session_state.current_page

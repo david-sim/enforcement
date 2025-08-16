@@ -56,14 +56,21 @@ def display_file_upload_section() -> Tuple[Optional[Any], str, Optional[dict]]:
     Returns:
         Tuple of (uploaded_file, address_type, single_record_data)
     """
+    # Check if processing is in progress to disable inputs
+    processing_in_progress = st.session_state.get('processing_in_progress', False)
+    
+    if processing_in_progress:
+        st.warning("🔒 **Processing in progress** - Input fields are temporarily locked to prevent interruption")
+    
     st.markdown("### Step 1: Select Address Type")
     
     # Address type selector
     address_type = st.selectbox(
         "Choose the type of address you're processing",
         options=["", "shophouse", "industrial"],
-        help="Select address type first - this may customize the form fields below",
-        key="address_type_selector"
+        help="Select address type first - this may customize the form fields below" if not processing_in_progress else "Input disabled during processing",
+        key="address_type_selector",
+        disabled=processing_in_progress
     )
     
     if address_type:
@@ -75,7 +82,8 @@ def display_file_upload_section() -> Tuple[Optional[Any], str, Optional[dict]]:
         # elif address_type == "industrial":
         #     # Industrial-specific form customization
     else:
-        st.info("👆 Please select an address type to continue")
+        if not processing_in_progress:
+            st.info("👆 Please select an address type to continue")
         return None, "", None
     
     # Show processing status if in progress
@@ -85,8 +93,9 @@ def display_file_upload_section() -> Tuple[Optional[Any], str, Optional[dict]]:
     input_method = st.radio(
         "How would you like to provide your data?",
         options=["Upload CSV file for multiple records/address", "Enter single record manually"],
-        help="Choose between bulk processing with CSV or entering one record manually",
-        key="input_method_selector"
+        help="Choose between bulk processing with CSV or entering one record manually" if not processing_in_progress else "Input disabled during processing",
+        key="input_method_selector",
+        disabled=processing_in_progress
     )
     
     # Clear validated record if switching input methods or address types
@@ -135,8 +144,9 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
             uploaded_file = st.file_uploader(
                 "Choose a CSV file",
                 type=['csv'],
-                help=f"Upload your CSV file containing {address_type} addresses",
-                key="csv_file_uploader"
+                help=f"Upload your CSV file containing {address_type} addresses" if not processing_in_progress else "File upload disabled during processing",
+                key="csv_file_uploader",
+                disabled=processing_in_progress
             )
         
         with col2:
@@ -144,9 +154,10 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
             # Sample data button
             if st.button(
                 f"📋 Load {address_type.title()} Sample",
-                help=f"Load sample {address_type} addresses for testing (10 sample addresses)",
+                help=f"Load sample {address_type} addresses for testing (10 sample addresses)" if not processing_in_progress else "Disabled during processing",
                 key=f"load_sample_{address_type}",
-                use_container_width=True
+                use_container_width=True,
+                disabled=processing_in_progress
             ):
                 # Load sample file
                 sample_file = load_sample_file(address_type)
@@ -189,7 +200,7 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
                     st.error(f"Error previewing sample data: {e}")
             
             # Clear sample button
-            if st.button("❌ Clear Sample Data", key=f"clear_sample_{address_type}"):
+            if st.button("❌ Clear Sample Data", key=f"clear_sample_{address_type}", disabled=processing_in_progress):
                 if 'sample_file_loaded' in st.session_state:
                     del st.session_state['sample_file_loaded']
                 if 'sample_file_type' in st.session_state:
@@ -212,12 +223,12 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
             # Address-type-specific placeholder and help text
             if address_type == "shophouse":
                 address_placeholder = "e.g., 123 Smith Street #02-01 Singapore 123456"
-                address_help = "Enter the complete shophouse address including unit number and postal code"
+                address_help = "Enter the complete shophouse address including unit number and postal code" if not processing_in_progress else "Input disabled during processing"
                 primary_placeholder = "e.g., Office, Restaurant"
                 secondary_placeholder = "e.g., Eating House, Foodshop"
             else:  # industrial
                 address_placeholder = "e.g., 1 Yishun Industrial Street 1 #01-05 768160"
-                address_help = "Enter the complete industrial address including unit number and postal code"  
+                address_help = "Enter the complete industrial address including unit number and postal code" if not processing_in_progress else "Input disabled during processing"
                 primary_placeholder = "e.g., Manufacturing, Core Media"
                 secondary_placeholder = "e.g., Minimart, Showroom"
             
@@ -225,7 +236,8 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
                 "Address *",
                 placeholder=address_placeholder,
                 help=address_help,
-                key="manual_address"
+                key="manual_address",
+                disabled=processing_in_progress
             )
             
             # Primary Approved Use - mandatory for shophouse, optional for industrial
@@ -233,28 +245,32 @@ Column 3: Secondary Approved Use (Optional) - e.g., "Manufacturing", "Storage"
                 primary_approved_use = st.text_input(
                     "Primary Approved Use *",
                     placeholder=primary_placeholder,
-                    help="Enter the primary approved use (required for shophouse)",
-                    key="manual_primary_use"
+                    help="Enter the primary approved use (required for shophouse)" if not processing_in_progress else "Input disabled during processing",
+                    key="manual_primary_use",
+                    disabled=processing_in_progress
                 )
             else:  # industrial
                 primary_approved_use = st.text_input(
                     "Primary Approved Use",
                     placeholder=primary_placeholder,
-                    help="Enter the primary approved use (optional)",
-                    key="manual_primary_use"
+                    help="Enter the primary approved use (optional)" if not processing_in_progress else "Input disabled during processing",
+                    key="manual_primary_use",
+                    disabled=processing_in_progress
                 )
             
             secondary_approved_use = st.text_input(
                 "Secondary Approved Use", 
                 placeholder=secondary_placeholder,
-                help="Enter the secondary approved use (optional)",
-                key="manual_secondary_use"
+                help="Enter the secondary approved use (optional)" if not processing_in_progress else "Input disabled during processing",
+                key="manual_secondary_use",
+                disabled=processing_in_progress
             )
             
             submitted = st.form_submit_button(
                 "Validate Entry",
                 type="secondary", 
-                use_container_width=True
+                use_container_width=True,
+                disabled=processing_in_progress
             )
             
             if submitted:
