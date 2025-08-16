@@ -55,14 +55,13 @@ Configure your OpenAI & SERP API key using one of these methods:
   ```
 Configure the credentials for authentication:
 - **Streamlit Secrets**: Add to `secrets.toml`
-
- ```bash
-[credentials]
-users = [
-    {username = "your-username1", password = "your-password-here"},
-    {username = "your-username2", password = "your-password-here"}
-]
-```
+  ```bash
+  [credentials]
+  users = [
+      {username = "your-username1", password = "your-password-here"},
+      {username = "your-username2", password = "your-password-here"}
+  ]
+  ```
 
 ### 2. Installation
 ```bash
